@@ -1,0 +1,16 @@
+# Render Blueprint: deploys the API on the free plan.
+# In Render: New > Blueprint > pick this repo (set rootDir if the repo holds both apps).
+services:
+  - type: web
+    name: resumeboost-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: CORS_ORIGINS
+        value: https://your-app.vercel.app
+      - key: PYTHON_VERSION
+        value: 3.12.7

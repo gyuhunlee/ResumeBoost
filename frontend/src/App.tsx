@@ -1,0 +1,18 @@
+import { Routes, Route, Navigate } from "react-router";
+import Landing from "./pages/Landing";
+import Dashboard from "./pages/Dashboard";
+import Tailor from "./pages/Tailor";
+import AppLayout from "./components/AppLayout";
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route element={<AppLayout />}>
+        <Route path="/dashboard" element={<Dashboard />} />
+      </Route>
+      <Route path="/tailor" element={<Tailor />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}

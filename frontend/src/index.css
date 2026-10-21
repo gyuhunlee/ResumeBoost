@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* The design uses Tailwind's default palette:
+   slate-900 #0F172A (text), slate-600 #475569 (muted), slate-200 #E2E8F0 (borders),
+   blue-700 #1D4ED8 (accent), green-700 #15803D (success), amber-700 #B45309 (warning). */
+
+body {
+  @apply bg-white font-sans text-slate-900 antialiased;
+}
