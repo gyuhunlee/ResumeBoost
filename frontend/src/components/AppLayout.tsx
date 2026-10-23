@@ -8,6 +8,7 @@ import {
   SparkleIcon,
 } from "./Icons";
 import type { ComponentType, SVGProps } from "react";
+import { useAuth } from "../auth/AuthProvider";
 
 type NavItem = {
   to: string;
@@ -25,6 +26,9 @@ const NAV: NavItem[] = [
 ];
 
 export default function AppLayout() {
+  const { session, signOut } = useAuth();
+  const meta = session?.user.user_metadata ?? {};
+
   return (
     <div className="flex min-h-screen flex-wrap bg-slate-50">
       <aside className="flex w-full flex-col gap-6 border-b border-slate-200 bg-white px-4 py-5 md:w-60 md:border-r md:border-b-0">
@@ -52,12 +56,13 @@ export default function AppLayout() {
           ))}
         </nav>
 
-        <div className="mt-auto hidden flex-col gap-1.5 rounded-xl border border-slate-200 p-3.5 md:flex">
-          <div className="flex items-center gap-2 text-[13px] font-semibold text-green-700">
-            <span className="h-2 w-2 rounded-full bg-green-700" />
-            Gmail connected
+        <div className="mt-auto flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+          {meta.avatar_url && <img src={meta.avatar_url} alt="" className="h-8 w-8 rounded-full" referrerPolicy="no-referrer" />}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{meta.full_name ?? "Account"}</div>
+            <div className="truncate text-xs text-slate-500">{session?.user.email}</div>
           </div>
-          <div className="text-[13px] text-slate-500">Synced 5 min ago</div>
+          <button type="button" onClick={signOut} className="min-h-11 cursor-pointer text-sm font-semibold text-blue-700">Sign out</button>
         </div>
       </aside>
 

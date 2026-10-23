@@ -10,6 +10,7 @@ import {
 } from "../components/Icons";
 import { Card, Chip, btnPrimary, btnSecondary } from "../components/ui";
 import type { ReactNode } from "react";
+import { useAuth } from "../auth/AuthProvider";
 
 const STEPS = [
   {
@@ -50,6 +51,8 @@ const FEATURES: { title: string; body: string; icon: ReactNode }[] = [
 ];
 
 export default function Landing() {
+  const { session, signInWithGoogle } = useAuth();
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -59,9 +62,6 @@ export default function Landing() {
           <nav aria-label="Main" className="flex flex-wrap items-center gap-7 text-[15px]">
             <a href="#how" className="text-slate-600 no-underline hover:text-slate-900">
               How it works
-            </a>
-            <a href="#features" className="text-slate-600 no-underline hover:text-slate-900">
-              Features
             </a>
             <a
               href="https://github.com/gyuhunlee/resumeboost"
@@ -91,11 +91,14 @@ export default function Landing() {
             straight from your inbox.
           </p>
           <div className="flex flex-wrap gap-3">
-            {/* Swap this Link for your Google OAuth flow (e.g. Supabase Auth signInWithOAuth). */}
-            <Link to="/dashboard" className={`${btnPrimary} min-h-12 text-base`}>
-              <LogInIcon size={18} />
-              Continue with Google
-            </Link>
+            {session ? (
+              <Link to="/dashboard" className={`${btnPrimary} min-h-12 text-base`}>Go to dashboard</Link>
+            ) : (
+              <button type="button" onClick={signInWithGoogle} className={`${btnPrimary} min-h-12 cursor-pointer text-base`}>
+                <LogInIcon size={18} />
+                Continue with Google
+              </button>
+            )}
             <a href="#how" className={`${btnSecondary} min-h-12 text-base`}>
               See how it works
             </a>

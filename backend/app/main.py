@@ -6,20 +6,16 @@ Docs:         http://localhost:8000/docs
 
 import re
 
-from fastapi import FastAPI
+from fastapi import Depends, File, HTTPException, UploadFile, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from .auth import CurrentUser, get_current_user
+from .resume_text import extract_text
 
 from . import mock_data
 from .schemas import ApplicationList, TailorRequest, TailorResult
+from .config import settings
 
-
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    cors_origins: str = "http://localhost:5173"
-
-
-settings = Settings()
+MAX_BYTES = 5 * 1024 * 1024
 
 app = FastAPI(title="Tailored API", version="0.1.0")
 
@@ -39,10 +35,29 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/applications", response_model=ApplicationList)
-def list_applications() -> ApplicationList:
-    # TODO: query the signed-in user's rows from Supabase; Gmail sync updates them.
+def list_applications(user: CurrentUser = Depends(get_current_user)) -> ApplicationList:
     return ApplicationList(stats=mock_data.STATS, items=mock_data.APPLICATIONS)
 
+@app.get("/api/me")
+def me(user: CurrentUser = Depends(get_current_user)) -> dict[str, str | None]:
+    return {"id": user.id, "email": user.email}
+
+
+@app.post("/api/resumes/extract")
+async def extract_resume(
+    file: UploadFile = File(...),
+    user: CurrentUser = Depends(get_current_user),  # only signed-in users
+) -> dict[str, str]:
+    data = await file.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, "File is larger than 5 MB")
+    try:
+        text = extract_text(data, file.content_type or "")
+    except ValueError as e:
+        raise HTTPException(415, str(e))
+    if not text:
+        raise HTTPException(422, "No text found. Scanned PDFs aren't supported yet.")
+    return {"text": text}
 
 def extract_keywords(job_description: str) -> list[str]:
     """Placeholder extractor: finds known skills in the posting.
@@ -58,7 +73,7 @@ def extract_keywords(job_description: str) -> list[str]:
 
 
 @app.post("/api/tailor", response_model=TailorResult)
-def tailor(req: TailorRequest) -> TailorResult:
+def tailor(req: TailorRequest, user: CurrentUser = Depends(get_current_user)) -> TailorResult:
     keywords = extract_keywords(req.job_description)
     matched = [k for k in keywords if k.lower() in mock_data.RESUME_SKILLS]
     missing = [k for k in keywords if k.lower() not in mock_data.RESUME_SKILLS]
