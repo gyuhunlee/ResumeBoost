@@ -1,6 +1,7 @@
 """API models. Field names are snake_case in Python and camelCase in JSON,
 matching frontend/src/types.ts."""
 
+import datetime as dt
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,7 +21,7 @@ class Application(CamelModel):
     role: str
     status: ApplicationStatus
     ats_score: int = Field(ge=0, le=100)
-    last_update: str
+    last_update_at: dt.date  # day of the latest email for this application; sent as "YYYY-MM-DD"
 
 
 class ApplicationStats(CamelModel):
@@ -33,6 +34,40 @@ class ApplicationStats(CamelModel):
 class ApplicationList(CamelModel):
     stats: ApplicationStats
     items: list[Application]
+
+
+class StatusCounts(BaseModel):
+    # Plain BaseModel on purpose: keys are status names ("follow_up"), not camelCase.
+    applied: int
+    interviewing: int
+    offer: int
+    follow_up: int
+    rejected: int
+
+
+class CalendarEvent(CamelModel):
+    id: str
+    date: dt.date
+    time: str | None = None  # "HH:MM", 24h, in the user's time zone
+    kind: ApplicationStatus
+    title: str
+    detail: str
+
+
+class Reminder(CamelModel):
+    id: str
+    date: dt.date
+    time: str | None = None
+    kind: Literal["interviewing", "follow_up", "offer"]
+    company: str
+    role: str
+    message: str
+
+
+class DashboardData(CamelModel):
+    counts: StatusCounts
+    events: list[CalendarEvent]
+    reminders: list[Reminder]
 
 
 class TailorRequest(CamelModel):

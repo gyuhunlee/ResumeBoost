@@ -111,3 +111,38 @@ export const LogInIcon = (p: IconProps) => (
     <path d="M15 12H3" />
   </Base>
 );
+
+export const DashboardIcon = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="3" y="3" width="7" height="9" rx="1" />
+    <rect x="14" y="3" width="7" height="5" rx="1" />
+    <rect x="14" y="12" width="7" height="9" rx="1" />
+    <rect x="3" y="16" width="7" height="5" rx="1" />
+  </Base>
+);
+
+export const BriefcaseIcon = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="3" y="7" width="18" height="13" rx="2" />
+    <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <path d="M3 13h18" />
+  </Base>
+);
+
+export const ChevronRightIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M9 6l6 6-6 6" />
+  </Base>
+);
+
+export const ChevronDownIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M6 9l6 6 6-6" />
+  </Base>
+);
+
+export const XIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </Base>
+);

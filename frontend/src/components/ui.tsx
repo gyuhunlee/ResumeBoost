@@ -44,7 +44,7 @@ const STATUS: Record<ApplicationStatus, { label: string; cls: string }> = {
   applied: { label: "Applied", cls: "bg-slate-100 text-slate-700" },
   interviewing: { label: "Interviewing", cls: "bg-blue-50 text-blue-700" },
   offer: { label: "Offer", cls: "bg-green-50 text-green-700" },
-  follow_up: { label: "Follow up", cls: "bg-orange-50 text-amber-700" },
+  follow_up: { label: "Follow up", cls: "bg-yellow-50 text-yellow-800" },
   rejected: { label: "Rejected", cls: "bg-red-50 text-red-700" },
 };
 
@@ -58,6 +58,36 @@ export function StatusPill({ status }: { status: ApplicationStatus }) {
 }
 
 export const statusLabel = (s: ApplicationStatus) => STATUS[s].label;
+
+/** Pipeline order, used for sorting and for the dashboard ring. */
+export const STATUS_ORDER: ApplicationStatus[] = ["applied", "interviewing", "offer", "follow_up", "rejected"];
+
+/** Solid colors for charts and calendar dots (Tailwind slate-400, blue-600, green-600, yellow-500, red-600). */
+export const STATUS_COLOR: Record<ApplicationStatus, string> = {
+  applied: "#94A3B8",
+  interviewing: "#2563EB",
+  offer: "#16A34A",
+  follow_up: "#EAB308",
+  rejected: "#DC2626",
+};
+
+/** Text-safe shades of the same colors (pass 4.5:1 on white). */
+export const STATUS_TEXT: Record<ApplicationStatus, string> = {
+  applied: "#475569",
+  interviewing: "#1D4ED8",
+  offer: "#15803D",
+  follow_up: "#A16207",
+  rejected: "#B91C1C",
+};
+
+/** Pale tints, for icon backgrounds and dimmed chart slices. */
+export const STATUS_TINT: Record<ApplicationStatus, string> = {
+  applied: "#E2E8F0",
+  interviewing: "#DBEAFE",
+  offer: "#DCFCE7",
+  follow_up: "#FEF9C3",
+  rejected: "#FEE2E2",
+};
 
 export function ScoreBar({ value, className = "" }: { value: number; className?: string }) {
   return (

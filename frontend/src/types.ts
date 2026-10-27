@@ -13,7 +13,7 @@ export interface Application {
   role: string;
   status: ApplicationStatus;
   atsScore: number;
-  lastUpdate: string; // e.g. "Interview invite · Today" (derived from Gmail)
+  lastUpdateAt: string; // ISO date "YYYY-MM-DD" of the latest email for this application
 }
 
 export interface ApplicationStats {
@@ -21,6 +21,36 @@ export interface ApplicationStats {
   interviewing: number;
   offers: number;
   followUpsDue: number;
+}
+
+/** Number of applications currently in each status (drives the dashboard ring). */
+export type StatusCounts = Record<ApplicationStatus, number>;
+
+/** Something that happened or will happen on a given day (an email, an interview, a deadline). */
+export interface CalendarEvent {
+  id: string;
+  date: string; // ISO date "YYYY-MM-DD"
+  time?: string | null; // "HH:MM", 24h, local to the user
+  kind: ApplicationStatus; // decides the dot color
+  title: string; // e.g. "Interview · Northwind"
+  detail: string; // e.g. "Software Engineer"
+}
+
+/** An upcoming item shown in the dashboard's notification panel. */
+export interface Reminder {
+  id: string;
+  date: string; // ISO date "YYYY-MM-DD"
+  time?: string | null; // "HH:MM", 24h
+  kind: "interviewing" | "follow_up" | "offer";
+  company: string;
+  role: string;
+  message: string;
+}
+
+export interface DashboardData {
+  counts: StatusCounts;
+  events: CalendarEvent[];
+  reminders: Reminder[];
 }
 
 export interface Rewrite {

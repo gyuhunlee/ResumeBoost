@@ -45,7 +45,7 @@ export default function Tailor() {
         <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 px-6 py-3.5">
           <div className="flex flex-wrap items-center gap-5">
             <Link
-              to="/dashboard"
+              to="/applications"
               className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-slate-600 no-underline hover:text-slate-900"
             >
               <ChevronLeftIcon size={16} />
@@ -126,7 +126,7 @@ export default function Tailor() {
               <button type="button" onClick={() => window.print()} className={`${btnPrimary} cursor-pointer text-sm`}>
                 Download PDF
               </button>
-              <button type="button" onClick={() => navigate("/dashboard")} className={`${btnSecondary} cursor-pointer text-sm`}>
+              <button type="button" onClick={() => navigate("/applications")} className={`${btnSecondary} cursor-pointer text-sm`}>
                 Save to applications
               </button>
             </div>

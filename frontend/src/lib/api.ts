@@ -1,6 +1,7 @@
 import type {
   Application,
   ApplicationStats,
+  DashboardData,
   TailorRequest,
   TailorResult,
 } from "../types";
@@ -29,6 +30,7 @@ export const api = {
     request<{ stats: ApplicationStats; items: Application[] }>(
       "/api/applications",
     ),
+  getDashboard: () => request<DashboardData>("/api/dashboard"),
   tailor: (body: TailorRequest) =>
     request<TailorResult>("/api/tailor", {
       method: "POST",

@@ -12,7 +12,7 @@ from .auth import CurrentUser, get_current_user
 from .resume_text import extract_text
 
 from . import mock_data
-from .schemas import ApplicationList, TailorRequest, TailorResult
+from .schemas import ApplicationList, DashboardData, TailorRequest, TailorResult
 from .config import settings
 
 MAX_BYTES = 5 * 1024 * 1024
@@ -36,7 +36,15 @@ def health() -> dict[str, str]:
 
 @app.get("/api/applications", response_model=ApplicationList)
 def list_applications(user: CurrentUser = Depends(get_current_user)) -> ApplicationList:
-    return ApplicationList(stats=mock_data.STATS, items=mock_data.APPLICATIONS)
+    return ApplicationList(stats=mock_data.STATS, items=mock_data.applications())
+
+
+@app.get("/api/dashboard", response_model=DashboardData)
+def get_dashboard(user: CurrentUser = Depends(get_current_user)) -> DashboardData:
+    # The frontend hides calendar events dated before the user's sign-up day.
+    # When the Gmail tracker is built, also only fetch mail after sign-up
+    # (Gmail search "after:YYYY/MM/DD") so older emails never reach the database.
+    return mock_data.dashboard()
 
 @app.get("/api/me")
 def me(user: CurrentUser = Depends(get_current_user)) -> dict[str, str | None]:

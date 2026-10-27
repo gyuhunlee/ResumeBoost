@@ -7,14 +7,14 @@ researches the company, and tracks applications from Gmail.
 resumeboost/
 ├── frontend/          React + TypeScript (Vite, Tailwind CSS v4, React Router)
 │   └── src/
-│       ├── pages/     Landing.tsx, Dashboard.tsx, Tailor.tsx
+│       ├── pages/     Landing.tsx, Dashboard.tsx, Applications.tsx, Tailor.tsx, Settings.tsx
 │       ├── components/ AppLayout (sidebar), Logo, Icons, ui (Card, Chip, StatusPill, ScoreRing…)
 │       ├── lib/api.ts  typed fetch client
 │       ├── data/mock.ts sample data (used when the API is offline)
 │       └── types.ts    shared shapes (mirror backend/app/schemas.py)
 ├── backend/           Python FastAPI
 │   └── app/
-│       ├── main.py     routes: GET /api/applications, POST /api/tailor, GET /api/health
+│       ├── main.py     routes: GET /api/dashboard, GET /api/applications, POST /api/tailor, GET /api/health
 │       ├── schemas.py  Pydantic models (snake_case in Python, camelCase in JSON)
 │       └── mock_data.py
 └── render.yaml        one-click deploy of the API to Render's free plan
@@ -41,7 +41,7 @@ npm run dev                                          # http://localhost:5173
 In dev, Vite proxies `/api` to `localhost:8000`, so no CORS setup is needed.
 If the backend isn't running, the pages fall back to sample data.
 
-Routes: `/` landing · `/dashboard` applications · `/tailor` tailoring flow.
+Routes: `/` landing · `/dashboard` overview (status ring, calendar, reminders) · `/applications` application table · `/tailor` tailoring flow.
 
 ## Deploy (free)
 

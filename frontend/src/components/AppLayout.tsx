@@ -1,8 +1,8 @@
 import { NavLink, Outlet } from "react-router";
 import Logo from "./Logo";
 import {
-  DocIcon,
-  GridIcon,
+  BriefcaseIcon,
+  DashboardIcon,
   SearchIcon,
   SettingsIcon,
   SparkleIcon,
@@ -16,11 +16,11 @@ type NavItem = {
   icon: ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 };
 
-// /resumes, /research and /settings don't have pages yet; add routes in App.tsx.
+// /research doesn't have a page yet; add its route in App.tsx.
 const NAV: NavItem[] = [
-  { to: "/dashboard", label: "Applications", icon: GridIcon },
+  { to: "/dashboard", label: "Dashboard", icon: DashboardIcon },
+  { to: "/applications", label: "Applications", icon: BriefcaseIcon },
   { to: "/tailor", label: "Tailor resume", icon: SparkleIcon },
-  { to: "/resumes", label: "My resumes", icon: DocIcon },
   { to: "/research", label: "Company research", icon: SearchIcon },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
