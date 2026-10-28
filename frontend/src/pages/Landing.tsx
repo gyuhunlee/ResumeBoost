@@ -60,18 +60,14 @@ export default function Landing() {
         <div className="mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-4 px-6 py-4">
           <Logo />
           <nav aria-label="Main" className="flex flex-wrap items-center gap-7 text-[15px]">
-            <a href="#how" className="text-slate-600 no-underline hover:text-slate-900">
-              How it works
-            </a>
-            <a
-              href="https://github.com/gyuhunlee/resumeboost"
-              className="text-slate-600 no-underline hover:text-slate-900"
-            >
-              GitHub
-            </a>
-            <Link to="/dashboard" className={`${btnSecondary} text-[15px]`}>
-              Sign in
-            </Link>
+            {session ? (
+              <Link to="/dashboard" className={`${btnPrimary} min-h-12 text-base`}>Log In</Link>
+            ) : (
+              <button type="button" onClick={signInWithGoogle} className={`${btnPrimary} min-h-12 cursor-pointer text-base`}>
+                <LogInIcon size={18} />
+                Continue with Google
+              </button>
+            )}
           </nav>
         </div>
       </header>
@@ -91,14 +87,6 @@ export default function Landing() {
             straight from your inbox.
           </p>
           <div className="flex flex-wrap gap-3">
-            {session ? (
-              <Link to="/dashboard" className={`${btnPrimary} min-h-12 text-base`}>Go to dashboard</Link>
-            ) : (
-              <button type="button" onClick={signInWithGoogle} className={`${btnPrimary} min-h-12 cursor-pointer text-base`}>
-                <LogInIcon size={18} />
-                Continue with Google
-              </button>
-            )}
             <a href="#how" className={`${btnSecondary} min-h-12 text-base`}>
               See how it works
             </a>

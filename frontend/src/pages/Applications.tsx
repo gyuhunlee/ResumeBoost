@@ -103,10 +103,6 @@ export default function Applications() {
             {usingMock && <span className="ml-2 text-slate-500">(showing sample data)</span>}
           </p>
         </div>
-        <Link to="/tailor" className={`${btnPrimary} text-[15px]`}>
-          <PlusIcon size={16} />
-          New tailored resume
-        </Link>
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
