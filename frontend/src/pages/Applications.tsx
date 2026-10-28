@@ -4,8 +4,8 @@ import { api } from "../lib/api";
 import { formatRelativeDate } from "../lib/dates";
 import { mockApplications, mockStats } from "../data/mock";
 import type { Application, ApplicationStats, ApplicationStatus } from "../types";
-import { PlusIcon, SearchIcon } from "../components/Icons";
-import { Card, STATUS_ORDER, ScoreBar, SrOnly, StatusPill, btnPrimary } from "../components/ui";
+import { SearchIcon } from "../components/Icons";
+import { Card, STATUS_ORDER, ScoreBar, SrOnly, StatusPill } from "../components/ui";
 
 type Filter = "all" | ApplicationStatus;
 type SortKey = "company" | "role" | "status" | "atsScore" | "lastUpdateAt";
