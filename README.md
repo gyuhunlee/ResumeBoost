@@ -27,10 +27,10 @@ Requires Node 20.19+ and Python 3.11+.
 ```bash
 # 1) Backend
 cd backend
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+py -m venv .venv                                     # Windows: .venv\Scripts\activate
+source .venv/Scripts/activate
 pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload --port 8000           # docs at http://localhost:8000/docs
+python -m uvicorn app.main:app --reload --port 8000        # docs at http://localhost:8000/docs
 
 # 2) Frontend (new terminal)
 cd frontend
