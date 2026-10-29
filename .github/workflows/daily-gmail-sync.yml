@@ -1,0 +1,22 @@
+# Daily Gmail sync for every connected user, so applications stay current even
+# for people who haven't opened the site. Free: GitHub Actions + Render.
+# Repo secrets needed: API_URL (your Render URL) and CRON_SECRET (same as on Render).
+name: Daily Gmail sync
+
+on:
+  schedule:
+    - cron: "17 13 * * *"   # 13:17 UTC ≈ 6:17 AM Pacific
+  workflow_dispatch: {}      # "Run workflow" button for manual runs
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Wake the API (Render free instances sleep when idle)
+        run: curl -fsS --retry 6 --retry-delay 10 --retry-all-errors "${{ secrets.API_URL }}/api/health"
+      - name: Sync all inboxes
+        run: |
+          curl -fsS -X POST --max-time 840 \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.API_URL }}/internal/sync-all"
