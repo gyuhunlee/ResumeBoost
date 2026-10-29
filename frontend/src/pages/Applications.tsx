@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../lib/api";
-import { formatRelativeDate } from "../lib/dates";
+import { formatDateTime, formatRelativeDateTime } from "../lib/dates";
+import { useGmailSync } from "../lib/useGmailSync";
+import GmailSyncBar from "../components/GmailSyncBar";
 import { mockApplications, mockStats } from "../data/mock";
 import type { Application, ApplicationStats, ApplicationStatus } from "../types";
 import { SearchIcon } from "../components/Icons";
@@ -28,19 +30,24 @@ const COLUMNS: { key: SortKey; label: string; firstDir: SortDir }[] = [
   { key: "lastUpdateAt", label: "Last update", firstDir: "desc" },
 ];
 
-function compare(a: Application, b: Application, key: SortKey): number {
-  switch (key) {
-    case "company":
-    case "role":
-      return a[key].localeCompare(b[key], undefined, { sensitivity: "base" });
-    case "status":
-      return STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
-    case "atsScore":
-      return a.atsScore - b.atsScore;
-    case "lastUpdateAt":
-      return a.lastUpdateAt.localeCompare(b.lastUpdateAt); // ISO dates sort as strings
+/** Compares two applications; unknown values ("–") always sort last. */
+function compare(a: Application, b: Application, key: SortKey, sign: number): number {
+  if (key === "company" || key === "role") {
+    return sign * a[key].localeCompare(b[key], undefined, { sensitivity: "base" });
   }
+  const av = key === "status" ? a.status : key === "atsScore" ? a.atsScore : a.lastUpdateAt;
+  const bv = key === "status" ? b.status : key === "atsScore" ? b.atsScore : b.lastUpdateAt;
+  if (av === null || bv === null) return av === bv ? 0 : av === null ? 1 : -1;
+  if (key === "status") return sign * (STATUS_ORDER.indexOf(av as ApplicationStatus) - STATUS_ORDER.indexOf(bv as ApplicationStatus));
+  if (key === "atsScore") return sign * ((av as number) - (bv as number));
+  return sign * (Date.parse(av as string) - Date.parse(bv as string));
 }
+
+const Unknown = () => (
+  <span className="text-slate-400" aria-label="Unknown">
+    –
+  </span>
+);
 
 function SortArrows({ dir }: { dir: SortDir | null }) {
   return (
@@ -59,8 +66,8 @@ export default function Applications() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "lastUpdateAt", dir: "desc" });
 
-  useEffect(() => {
-    // Load from the FastAPI backend; keep the sample data if it isn't running.
+  // Load from the FastAPI backend; keep the sample data if it isn't running.
+  const load = useCallback(() => {
     api
       .listApplications()
       .then((data) => {
@@ -71,6 +78,9 @@ export default function Applications() {
       .catch(() => setUsingMock(true));
   }, []);
 
+  useEffect(load, [load]);
+  const sync = useGmailSync(load); // reload the table whenever a sync finishes
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     const sign = sort.dir === "asc" ? 1 : -1;
@@ -80,7 +90,7 @@ export default function Applications() {
           (filter === "all" || a.status === filter) &&
           (!q || a.company.toLowerCase().includes(q) || a.role.toLowerCase().includes(q)),
       )
-      .sort((a, b) => sign * compare(a, b, sort.key));
+      .sort((a, b) => compare(a, b, sort.key, sign));
   }, [items, filter, query, sort]);
 
   const toggleSort = (key: SortKey, firstDir: SortDir) =>
@@ -104,6 +114,8 @@ export default function Applications() {
           </p>
         </div>
       </div>
+
+      <GmailSyncBar sync={sync} />
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         {tiles.map((t) => (
@@ -181,29 +193,50 @@ export default function Applications() {
               </tr>
             </thead>
             <tbody>
-              {visible.map((a) => (
-                <tr key={a.id} className="border-t border-slate-100">
-                  <td className="px-5 py-3.5 font-semibold">{a.company}</td>
-                  <td className="px-5 py-3.5 text-slate-700">{a.role}</td>
-                  <td className="px-5 py-3.5">
-                    <StatusPill status={a.status} />
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2.5">
-                      <ScoreBar value={a.atsScore} className="w-20" />
-                      <span className="font-semibold">{a.atsScore}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 text-slate-600">
-                    <time dateTime={a.lastUpdateAt}>{formatRelativeDate(a.lastUpdateAt)}</time>
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <Link to={`/tailor?application=${a.id}`} className="font-semibold text-blue-700 hover:text-blue-800">
-                      Open<SrOnly> {a.company}</SrOnly>
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {visible.map((a) => {
+                // Tailored here but no email has confirmed it was submitted: greyed out.
+                const pending = a.status === null;
+                return (
+                  <tr key={a.id} className={`border-t border-slate-100 ${pending ? "bg-slate-50/70" : ""}`}>
+                    <td className={`px-5 py-3.5 font-semibold ${pending ? "text-slate-500" : ""}`}>
+                      {a.company}
+                      {a.needsReview && (
+                        <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                          Check match
+                        </span>
+                      )}
+                    </td>
+                    <td className={`px-5 py-3.5 ${pending ? "text-slate-500" : "text-slate-700"}`}>{a.role || <Unknown />}</td>
+                    <td className="px-5 py-3.5">
+                      {a.status ? <StatusPill status={a.status} /> : <Unknown />}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {a.atsScore === null ? (
+                        <Unknown />
+                      ) : (
+                        <div className={`flex items-center gap-2.5 ${pending ? "opacity-60" : ""}`}>
+                          <ScoreBar value={a.atsScore} className="w-20" />
+                          <span className="font-semibold">{a.atsScore}</span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap text-slate-600">
+                      {a.lastUpdateAt ? (
+                        <time dateTime={a.lastUpdateAt} title={formatDateTime(a.lastUpdateAt)}>
+                          {formatRelativeDateTime(a.lastUpdateAt)}
+                        </time>
+                      ) : (
+                        <Unknown />
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <Link to={`/applications/${a.id}`} className="font-semibold text-blue-700 hover:text-blue-800">
+                        Open<SrOnly> {a.company}</SrOnly>
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
               {visible.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-5 py-10 text-center text-slate-500">

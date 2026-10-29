@@ -19,9 +19,40 @@ class Application(CamelModel):
     id: str
     company: str
     role: str
-    status: ApplicationStatus
-    ats_score: int = Field(ge=0, le=100)
-    last_update_at: dt.date  # day of the latest email for this application; sent as "YYYY-MM-DD"
+    # None = tailored here but no email has confirmed it was submitted yet (row shows greyed out)
+    status: ApplicationStatus | None
+    ats_score: int | None = Field(default=None, ge=0, le=100)  # None when not tailored here
+    # Received time of the email that last changed the status (ISO 8601 with offset).
+    last_update_at: dt.datetime | None
+    source: Literal["tailored", "gmail", "both"]
+    has_tailored_resume: bool  # False disables "Download PDF"
+    needs_review: bool = False  # an email was matched to this row without certainty
+
+
+class EmailEvent(CamelModel):
+    id: str
+    type: Literal["applied", "interviewing", "offer", "rejected"]
+    subject: str
+    sender: str
+    received_at: dt.datetime
+    interview_at: dt.datetime | None = None
+
+
+class ApplicationDetail(Application):
+    job_description: str | None
+    tailored_resume_path: str | None  # in the private 'resumes' bucket; the browser signs a URL
+    applied_at: dt.datetime | None
+    created_at: dt.datetime
+    updated_at: dt.datetime
+    emails: list[EmailEvent]
+
+
+class GmailStatus(CamelModel):
+    connected: bool
+    gmail_address: str | None = None
+    last_synced_at: dt.datetime | None = None
+    sync_status: Literal["idle", "running", "error"] | None = None
+    last_error: str | None = None
 
 
 class ApplicationStats(CamelModel):
@@ -74,6 +105,8 @@ class TailorRequest(CamelModel):
     company: str = Field(min_length=1, max_length=200)
     role: str = Field(min_length=1, max_length=200)
     job_description: str = Field(min_length=20, max_length=20_000)
+    # False for previews (the page's first load) so they don't create application rows.
+    save: bool = True
 
 
 class Rewrite(CamelModel):
@@ -95,3 +128,4 @@ class TailorResult(CamelModel):
     missing_keywords: list[str]
     rewrites: list[Rewrite]
     company_brief: CompanyBrief
+    application_id: str | None = None  # the applications row this tailoring was saved to

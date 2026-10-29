@@ -6,6 +6,7 @@ import Tailor from "./pages/Tailor";
 import AppLayout from "./components/AppLayout";
 import RequireAuth from "./auth/RequireAuth";
 import Settings from "./pages/Settings";
+import ApplicationDetail from "./pages/ApplicationDetail";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/applications" element={<Applications />} />
+          <Route path="/applications/:id" element={<ApplicationDetail />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       <Route path="/tailor" element={<Tailor />} />

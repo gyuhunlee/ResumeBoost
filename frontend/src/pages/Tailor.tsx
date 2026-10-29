@@ -23,7 +23,8 @@ export default function Tailor() {
     setLoading(true);
     setError(null);
     try {
-      setResult(await api.tailor({ company, role, jobDescription }));
+      // The automatic run on page load is a preview; only a real submit saves an application.
+      setResult(await api.tailor({ company, role, jobDescription, save: !!e }));
     } catch {
       setError("Couldn't reach the API, so sample results are shown.");
       setResult(mockTailorResult);

@@ -1,5 +1,9 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
+import { formatDateTime } from "../lib/dates";
+import { useGmailSync } from "../lib/useGmailSync";
 import { useAuth } from "../auth/AuthProvider";
 import { Card, btnPrimary, btnSecondary } from "../components/ui";
 import { deleteResume, fileUrl, listResumes, saveResume, uploadResume, type Resume } from "../lib/resumes";
@@ -17,6 +21,8 @@ export default function Settings() {
       <h1 className="m-0 text-[28px] font-bold tracking-tight">Settings</h1>
       <AccountCard userId={user.id} email={user.email ?? ""} />
       <ResumesCard userId={user.id} />
+      <GmailCard />
+      <DeleteAccountCard userId={user.id} />
     </div>
   );
 }
@@ -209,5 +215,174 @@ function ResumeItem({ resume, onSaved, onDeleted }: {
       )}
       {error && <p role="alert" className="m-0 text-sm text-red-700">{error}</p>}
     </div>
+  );
+}
+const GMAIL_RESULT: Record<string, { text: string; ok: boolean }> = {
+  connected: { text: "Gmail connected. Your first sync is running.", ok: true },
+  cancelled: { text: "Gmail wasn't connected.", ok: false },
+  error: { text: "Couldn't connect Gmail. Try again.", ok: false },
+};
+
+function GmailCard() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  // Google sends the user back to /settings?gmail=connected|cancelled|error
+  const [result] = useState(() => GMAIL_RESULT[new URLSearchParams(location.search).get("gmail") ?? ""]);
+  const sync = useGmailSync(undefined, { autoSync: false });
+  const { status, error, syncing } = sync;
+
+  useEffect(() => {
+    if (location.search.includes("gmail=")) navigate({ search: "", hash: "gmail" }, { replace: true });
+    if (location.hash === "#gmail") document.getElementById("gmail")?.scrollIntoView({ behavior: "smooth" });
+    // Poll after connecting so "Last synced" fills in when the first sync ends.
+    if (result?.ok) void sync.syncNow();
+  }, []);
+
+  async function disconnect() {
+    if (!window.confirm("Disconnect Gmail? Applications already found stay on your account.")) return;
+    await sync.disconnect();
+  }
+
+  return (
+    <Card className="flex scroll-mt-6 flex-col gap-4 p-6">
+      <div id="gmail" className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-xl">
+          <h2 className="m-0 text-lg font-semibold">Gmail</h2>
+          <p className="mt-1 mb-0 text-sm text-slate-600">
+            Resumeboost reads emails from applicant tracking systems (confirmations, interview invites,
+            rejections) to build your Applications list. It has read-only access, only looks at mail received
+            after you signed up, and never stores email bodies.
+          </p>
+        </div>
+        {status?.connected ? (
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={sync.syncNow} disabled={syncing} className={`${btnSecondary} cursor-pointer text-sm`}>
+              {syncing ? "Syncing…" : "Sync now"}
+            </button>
+            <button type="button" onClick={disconnect} className={`${btnSecondary} cursor-pointer text-sm text-red-700`}>
+              Disconnect
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={sync.connect} disabled={!status} className={`${btnPrimary} cursor-pointer text-sm`}>
+            Connect Gmail
+          </button>
+        )}
+      </div>
+
+      {result && (
+        <p role="status" className={`m-0 text-sm ${result.ok ? "text-green-700" : "text-red-700"}`}>{result.text}</p>
+      )}
+      {status?.connected && (
+        <dl className="m-0 grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 text-sm">
+          <dt className="text-slate-500">Account</dt>
+          <dd className="m-0">{status.gmailAddress}</dd>
+          <dt className="text-slate-500">Last synced</dt>
+          <dd className="m-0" aria-live="polite">
+            {syncing ? "Syncing now…" : status.lastSyncedAt ? formatDateTime(status.lastSyncedAt) : "Not yet"}
+          </dd>
+          {status.syncStatus === "error" && !syncing && (
+            <>
+              <dt className="text-slate-500">Problem</dt>
+              <dd className="m-0 text-red-700">
+                {status.lastError}
+                {status.lastError?.startsWith("Reconnect") && (
+                  <button type="button" onClick={sync.connect} className="ml-2 cursor-pointer font-semibold text-blue-700">
+                    Reconnect
+                  </button>
+                )}
+              </dd>
+            </>
+          )}
+        </dl>
+      )}
+      {!status && <p className="m-0 text-sm text-slate-500">Gmail status is unavailable while the server is offline.</p>}
+      {error && <p role="alert" className="m-0 text-sm text-red-700">{error}</p>}
+    </Card>
+  );
+}
+
+const CONFIRM_WORD = "DELETE";
+
+function DeleteAccountCard({ userId }: { userId: string }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove(e: FormEvent) {
+    e.preventDefault();
+    if (typed !== CONFIRM_WORD) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteAccount();
+    } catch (err) {
+      setBusy(false);
+      return setError(err instanceof Error ? err.message : "Couldn't delete your account. Try again.");
+    }
+    // The server already removed the user, so only clear this browser's session.
+    try {
+      localStorage.removeItem(`rb:dismissed-reminders:${userId}`);
+    } catch {
+      /* storage unavailable */
+    }
+    await supabase.auth.signOut({ scope: "local" });
+    navigate("/", { replace: true });
+  }
+
+  return (
+    <Card className="flex flex-col gap-4 border-red-200 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-xl">
+          <h2 className="m-0 text-lg font-semibold text-red-800">Delete account</h2>
+          <p className="mt-1 mb-0 text-sm text-slate-600">
+            Permanently deletes your account, resumes, tailored resumes, applications and email history,
+            and removes Resumeboost's access to your Gmail. This can't be undone.
+          </p>
+        </div>
+        {!open && (
+          <button type="button" onClick={() => setOpen(true)} className={`${btnSecondary} cursor-pointer text-sm text-red-700`}>
+            Delete account…
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <form onSubmit={remove} className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+          <label className={labelCls}>
+            Type {CONFIRM_WORD} to confirm
+            <input
+              className={`${inputCls} bg-white`}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoComplete="off"
+              autoFocus
+              aria-describedby="delete-help"
+            />
+          </label>
+          <span id="delete-help" className="sr-only">This permanently deletes your account.</span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={typed !== CONFIRM_WORD || busy}
+              className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-lg bg-red-700 px-5 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy ? "Deleting…" : "Permanently delete my account"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOpen(false); setTyped(""); setError(null); }}
+              disabled={busy}
+              className={`${btnSecondary} cursor-pointer text-sm`}
+            >
+              Cancel
+            </button>
+          </div>
+          {error && <p role="alert" className="m-0 text-sm text-red-700">{error}</p>}
+        </form>
+      )}
+    </Card>
   );
 }

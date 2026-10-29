@@ -6,14 +6,21 @@ Docs:         http://localhost:8000/docs
 
 import re
 
-from fastapi import Depends, File, HTTPException, UploadFile, FastAPI
+import logging
+
+from fastapi import Depends, File, HTTPException, Query, UploadFile, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .auth import CurrentUser, get_current_user
 from .resume_text import extract_text
 
-from . import mock_data
-from .schemas import ApplicationList, DashboardData, TailorRequest, TailorResult
+from . import mock_data, tracker
+from .db import db, eq
+from .routes_gmail import revoke_gmail, router as gmail_router
+from .schemas import ApplicationDetail, ApplicationList, DashboardData, TailorRequest, TailorResult
 from .config import settings
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 MAX_BYTES = 5 * 1024 * 1024
 
@@ -26,6 +33,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(gmail_router)
 
 
 @app.get("/api/health")
@@ -36,15 +44,42 @@ def health() -> dict[str, str]:
 
 @app.get("/api/applications", response_model=ApplicationList)
 def list_applications(user: CurrentUser = Depends(get_current_user)) -> ApplicationList:
-    return ApplicationList(stats=mock_data.STATS, items=mock_data.applications())
+    stats, items = tracker.list_applications(user.id)
+    return ApplicationList(stats=stats, items=items)
+
+
+@app.get("/api/applications/{app_id}", response_model=ApplicationDetail)
+def get_application(app_id: str, user: CurrentUser = Depends(get_current_user)) -> ApplicationDetail:
+    detail = tracker.get_application(user.id, app_id)
+    if detail is None:
+        raise HTTPException(404, "Application not found")
+    return detail
 
 
 @app.get("/api/dashboard", response_model=DashboardData)
-def get_dashboard(user: CurrentUser = Depends(get_current_user)) -> DashboardData:
-    # The frontend hides calendar events dated before the user's sign-up day.
-    # When the Gmail tracker is built, also only fetch mail after sign-up
-    # (Gmail search "after:YYYY/MM/DD") so older emails never reach the database.
-    return mock_data.dashboard()
+def get_dashboard(
+    tz: str | None = Query(default=None, description="IANA time zone, e.g. America/Los_Angeles"),
+    user: CurrentUser = Depends(get_current_user),
+) -> DashboardData:
+    # The Gmail sync only reads mail received after sign-up, and the frontend
+    # also hides calendar days before sign-up.
+    return tracker.dashboard(user.id, tz)
+
+
+@app.delete("/api/account", status_code=204)
+def delete_account(user: CurrentUser = Depends(get_current_user)) -> None:
+    """Permanently deletes the user: Gmail access, stored files, then the login.
+    Deleting the auth user cascades to profiles, resumes, applications,
+    email_events and gmail_accounts (all reference auth.users ON DELETE CASCADE)."""
+    acc = db.select_one("gmail_accounts", {"user_id": eq(user.id)})
+    if acc:
+        revoke_gmail(acc)  # also tell Google, so the app loses inbox access
+    try:
+        db.remove_user_files("resumes", user.id)
+    except Exception:
+        log.exception("could not delete stored files for %s", user.id)
+        raise HTTPException(500, "Couldn't delete your files. Nothing was removed; try again.")
+    db.delete_auth_user(user.id)
 
 @app.get("/api/me")
 def me(user: CurrentUser = Depends(get_current_user)) -> dict[str, str | None]:
@@ -93,7 +128,13 @@ def tailor(req: TailorRequest, user: CurrentUser = Depends(get_current_user)) ->
 
     # TODO: agent step — ask the LLM to rewrite bullets using only facts from
     # the resume, then re-score. Never add skills the user doesn't have.
+
+    # Save (or merge into) the application row, so when the confirmation email
+    # arrives the Gmail sync attaches to this row instead of creating a new one.
+    application_id = (tracker.save_tailored(user.id, req.company, req.role, req.job_description, score)
+                      if req.save else None)
     return TailorResult(
+        application_id=application_id,
         original_score=original,
         score=score,
         matched_keywords=matched,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../lib/api";
 import { toISODate } from "../lib/dates";
@@ -10,6 +10,8 @@ import { btnPrimary } from "../components/ui";
 import StatusRing from "../components/dashboard/StatusRing";
 import CalendarCard from "../components/dashboard/CalendarCard";
 import RemindersPanel from "../components/dashboard/RemindersPanel";
+import GmailSyncBar from "../components/GmailSyncBar";
+import { useGmailSync } from "../lib/useGmailSync";
 
 // Dismissed reminders are remembered per user in this browser.
 // TODO: store them on the server once reminders live in the database.
@@ -38,7 +40,7 @@ export default function Dashboard() {
   const [usingMock, setUsingMock] = useState(true);
   const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed(userId));
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api
       .getDashboard()
       .then((d) => {
@@ -47,6 +49,10 @@ export default function Dashboard() {
       })
       .catch(() => setUsingMock(true));
   }, []);
+
+  useEffect(load, [load]);
+  // Opening the dashboard syncs Gmail if the last sync is over 15 minutes old.
+  const sync = useGmailSync(load);
 
   useEffect(() => setDismissed(loadDismissed(userId)), [userId]);
 
@@ -92,6 +98,8 @@ export default function Dashboard() {
           New tailored resume
         </Link>
       </div>
+
+      <GmailSyncBar sync={sync} />
 
       <div className="flex flex-wrap items-stretch gap-6">
         <div className="flex min-w-0 flex-[999_1_520px] flex-col gap-6">

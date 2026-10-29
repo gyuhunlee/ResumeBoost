@@ -54,3 +54,17 @@ export function formatTime(hhmm: string): string {
   const [h, m] = hhmm.split(":").map(Number);
   return new Date(2000, 0, 1, h, m).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
+
+/** "Oct 27, 2026, 7:46 PM" in the user's time zone, from an ISO date-time. */
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
+  });
+}
+
+/** "Today, 7:46 PM", "Yesterday, 9:02 AM", or "Oct 15, 3:10 PM" (year added when it differs). */
+export function formatRelativeDateTime(iso: string, today = new Date()): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return `${formatRelativeDate(toISODate(d), today)}, ${time}`;
+}

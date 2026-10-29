@@ -6,17 +6,31 @@ import { addDays, toISODate } from "../lib/dates";
 // Dates are relative to today so the sample never goes stale.
 
 const day = (offset: number) => toISODate(addDays(new Date(), offset));
+/** ISO date-time `offset` days from now at hh:mm local time. */
+const at = (offset: number, h: number, m: number) => {
+  const d = addDays(new Date(), offset);
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
+};
+const tracked = { source: "both", hasTailoredResume: true, needsReview: false } as const;
 
 export const mockApplications: Application[] = [
-  { id: "1", company: "Northwind", role: "Software Engineer", status: "interviewing", atsScore: 91, lastUpdateAt: day(0) },
-  { id: "2", company: "Lumen Labs", role: "Frontend Engineer", status: "offer", atsScore: 88, lastUpdateAt: day(-1) },
-  { id: "7", company: "Orbital", role: "Platform Engineer", status: "interviewing", atsScore: 82, lastUpdateAt: day(-5) },
-  { id: "3", company: "Brightpath", role: "Full-Stack Developer", status: "follow_up", atsScore: 84, lastUpdateAt: day(-9) },
-  { id: "4", company: "Atlas Health", role: "Backend Engineer", status: "applied", atsScore: 79, lastUpdateAt: day(-11) },
-  { id: "5", company: "Kestrel", role: "Junior ML Engineer", status: "applied", atsScore: 76, lastUpdateAt: day(-14) },
-  { id: "6", company: "Harbor Pay", role: "Software Engineer II", status: "rejected", atsScore: 72, lastUpdateAt: day(-17) },
-  { id: "8", company: "Quill", role: "Data Engineer", status: "rejected", atsScore: 68, lastUpdateAt: day(-20) },
+  { id: "1", company: "Northwind", role: "Software Engineer", status: "interviewing", atsScore: 91, lastUpdateAt: at(0, 9, 12), ...tracked },
+  { id: "2", company: "Lumen Labs", role: "Frontend Engineer", status: "offer", atsScore: 88, lastUpdateAt: at(-1, 16, 40), ...tracked },
+  { id: "7", company: "Orbital", role: "Platform Engineer", status: "interviewing", atsScore: 82, lastUpdateAt: at(-5, 11, 5), ...tracked },
+  { id: "3", company: "Brightpath", role: "Full-Stack Developer", status: "follow_up", atsScore: 84, lastUpdateAt: at(-9, 14, 22), ...tracked },
+  { id: "4", company: "Atlas Health", role: "Backend Engineer", status: "applied", atsScore: 79, lastUpdateAt: at(-11, 10, 48), ...tracked },
+  { id: "5", company: "Kestrel", role: "Junior ML Engineer", status: "applied", atsScore: 76, lastUpdateAt: at(-14, 8, 30), ...tracked },
+  { id: "6", company: "Harbor Pay", role: "Software Engineer II", status: "rejected", atsScore: 72, lastUpdateAt: at(-17, 17, 15), ...tracked },
+  { id: "8", company: "Quill", role: "Data Engineer", status: "rejected", atsScore: 68, lastUpdateAt: at(-20, 13, 3), ...tracked },
 ];
+
+mockApplications.push(
+  // Tailored here, not yet confirmed by an email: shown greyed out
+  { id: "9", company: "Pinecrest", role: "Software Engineer", status: null, atsScore: 86, lastUpdateAt: null, source: "tailored", hasTailoredResume: true, needsReview: false },
+  // Found in the inbox only: no tailored resume to download
+  { id: "10", company: "Meridian", role: "Backend Developer", status: "applied", atsScore: null, lastUpdateAt: at(-2, 9, 41), source: "gmail", hasTailoredResume: false, needsReview: false },
+);
 
 export const mockStats: ApplicationStats = {
   applied: 18,
