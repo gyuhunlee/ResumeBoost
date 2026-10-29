@@ -1,10 +1,18 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { api } from "../lib/api";
 import { fileUrl } from "../lib/resumes";
 import { formatDateTime } from "../lib/dates";
 import { mockApplications } from "../data/mock";
-import type { ApplicationDetail as Detail, EmailEvent } from "../types";
+import type { Application, ApplicationDetail as Detail, EmailEvent } from "../types";
+import { useAuth } from "../auth/AuthProvider";
+import { keys, peek, useResource } from "../lib/store";
+
+/** A list row shaped as a detail record (fields the list doesn't have are empty). */
+const asDetail = (a: Application): Detail => ({
+  ...a, jobDescription: null, tailoredResumePath: null, appliedAt: a.lastUpdateAt,
+  createdAt: a.lastUpdateAt ?? "", updatedAt: a.lastUpdateAt ?? "", emails: [],
+});
 import { ChevronLeftIcon, DocIcon } from "../components/Icons";
 import { Card, ScoreBar, StatusPill, btnPrimary, btnSecondary } from "../components/ui";
 
@@ -23,30 +31,27 @@ const EMAIL_LABEL: Record<EmailEvent["type"], string> = {
 
 export default function ApplicationDetail() {
   const { id = "" } = useParams();
-  const [app, setApp] = useState<Detail | null>(null);
-  const [state, setState] = useState<"loading" | "ready" | "missing" | "sample">("loading");
-  const [pdfError, setPdfError] = useState<string | null>(null);
+  const { session } = useAuth();
+  const userId = session!.user.id;
+  const res = useResource(keys.application(userId, id), () => api.getApplication(id));
+  // While the full record loads, show the row we already have from the Applications list.
+  const listRow = peek<{ items: Application[] }>(keys.applications(userId))?.items.find((a) => a.id === id);
+  const sample = mockApplications.find((a) => a.id === id);
 
-  useEffect(() => {
-    setState("loading");
-    api
-      .getApplication(id)
-      .then((d) => {
-        setApp(d);
-        setState("ready");
-      })
-      .catch((e: Error) => {
-        // Backend offline: show the sample row if this id is one of them.
-        const sample = mockApplications.find((a) => a.id === id);
-        if (sample && !e.message.includes("not found")) {
-          setApp({ ...sample, jobDescription: null, tailoredResumePath: null, appliedAt: sample.lastUpdateAt,
-                   createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), emails: [] });
-          setState("sample");
-        } else {
-          setState("missing");
-        }
-      });
-  }, [id]);
+  let app: Detail | null = res.data;
+  let state: "loading" | "ready" | "missing" | "sample" = app ? "ready" : "loading";
+  if (!app && listRow) app = { ...asDetail(listRow), emails: [] };
+  if (!app && res.status === "error") {
+    if (sample) {
+      app = asDetail(sample); // backend offline: show the sample row
+      state = "sample";
+    } else {
+      state = "missing";
+    }
+  }
+  // Couldn't refresh (offline) but the list row is cached: show it instead of spinning.
+  if (app && state === "loading" && res.status === "error") state = "ready";
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   async function downloadPdf() {
     if (!app?.tailoredResumePath) return;
@@ -65,7 +70,7 @@ export default function ApplicationDetail() {
     </Link>
   );
 
-  if (state === "loading") return <div className="mx-auto max-w-4xl">{back}<p className="text-slate-500">Loading…</p></div>;
+  if (!app && state === "loading") return <div className="mx-auto max-w-4xl">{back}<p className="text-slate-500">Loading…</p></div>;
   if (state === "missing" || !app) {
     return (
       <div className="mx-auto max-w-4xl">
@@ -134,7 +139,9 @@ export default function ApplicationDetail() {
 
       <Card className="p-6">
         <h2 className="m-0 text-lg font-semibold">Emails</h2>
-        {app.emails.length === 0 ? (
+        {state === "loading" ? (
+          <div className="mt-4 h-16 animate-pulse rounded bg-slate-100" aria-label="Loading emails" />
+        ) : app.emails.length === 0 ? (
           <p className="mt-2 mb-0 text-sm text-slate-500">
             {app.source === "tailored"
               ? "No emails yet. When the confirmation arrives in Gmail, this application will update automatically."

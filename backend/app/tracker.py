@@ -156,7 +156,8 @@ def dashboard(user_id: str, tz_name: str | None) -> DashboardData:
             when = _dt(e["interview_at"])
             d2, t2 = local(when)
             events.append(CalendarEvent(id=f"{e['id']}-iv", date=d2, time=t2, kind="interviewing",
-                                        title=f"Interview · {app['company']}", detail=app["role"]))
+                                        title=f"Interview · {app['company']}", detail=app["role"],
+                                        scheduled=True))
             if when >= now:
                 reminders.append(Reminder(id=f"iv-{e['id']}", date=d2, time=t2, kind="interviewing",
                                           company=app["company"], role=app["role"],

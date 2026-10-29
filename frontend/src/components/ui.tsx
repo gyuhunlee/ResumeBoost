@@ -147,3 +147,48 @@ export function ScoreRing({ value, size = 120 }: { value: number; size?: number 
 export function SrOnly({ children }: { children: ReactNode }) {
   return <span className="sr-only">{children}</span>;
 }
+
+/** Splits `items` into pages. Clamps the page when the list shrinks (e.g. after a dismiss). */
+export function paginate<T>(items: T[], page: number, size: number) {
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  const current = Math.min(Math.max(page, 1), pages);
+  return { pageItems: items.slice((current - 1) * size, current * size), page: current, pages };
+}
+
+/** "‹  1–5 of 12  ›" control. Renders nothing when everything fits on one page. */
+export function Pager({
+  page,
+  pages,
+  total,
+  size,
+  onPage,
+  label,
+}: {
+  page: number;
+  pages: number;
+  total: number;
+  size: number;
+  onPage: (p: number) => void;
+  label: string;
+}) {
+  if (pages <= 1) return null;
+  const from = (page - 1) * size + 1;
+  const to = Math.min(page * size, total);
+  const btn =
+    "flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-default disabled:opacity-35";
+  return (
+    <nav aria-label={label} className="flex items-center justify-between gap-3 text-[13px] text-slate-600">
+      <span aria-live="polite">
+        {from}–{to} of {total}
+      </span>
+      <div className="flex gap-1">
+        <button type="button" className={btn} onClick={() => onPage(page - 1)} disabled={page <= 1} aria-label="Previous page">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+        </button>
+        <button type="button" className={btn} onClick={() => onPage(page + 1)} disabled={page >= pages} aria-label="Next page">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+        </button>
+      </div>
+    </nav>
+  );
+}

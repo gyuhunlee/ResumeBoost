@@ -1,14 +1,12 @@
 import { Link } from "react-router";
-import type { useGmailSync } from "../lib/useGmailSync";
+import { useGmailSync } from "../lib/useGmailSync";
 import { formatDateTime } from "../lib/dates";
 import { MailIcon } from "./Icons";
 import { btnSecondary } from "./ui";
 
-type Sync = ReturnType<typeof useGmailSync>;
-
 /** "Last synced Oct 27, 2026, 7:46 PM · Sync now", or a prompt to connect Gmail. */
-export default function GmailSyncBar({ sync }: { sync: Sync }) {
-  const { status, error, syncing, syncNow } = sync;
+export default function GmailSyncBar() {
+  const { status, error, syncing, notice, syncNow } = useGmailSync();
   if (!status) return null; // backend offline
 
   if (!status.connected) {
@@ -40,6 +38,7 @@ export default function GmailSyncBar({ sync }: { sync: Sync }) {
               : "Try again."}
           </span>
         )}
+        {notice && !syncing && <span className="font-medium text-green-700">· {notice}</span>}
         {error && <span className="text-red-700">· {error}</span>}
       </span>
       <button

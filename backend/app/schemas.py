@@ -53,6 +53,8 @@ class GmailStatus(CamelModel):
     last_synced_at: dt.datetime | None = None
     sync_status: Literal["idle", "running", "error"] | None = None
     last_error: str | None = None
+    # Set by POST /api/gmail/sync: how many emails changed an application in this sync.
+    changed: int | None = None
 
 
 class ApplicationStats(CamelModel):
@@ -83,6 +85,8 @@ class CalendarEvent(CamelModel):
     kind: ApplicationStatus
     title: str
     detail: str
+    # True only for a scheduled interview (a date/time named in an email). Only these get a calendar dot.
+    scheduled: bool = False
 
 
 class Reminder(CamelModel):

@@ -9,6 +9,10 @@ import {
 } from "./Icons";
 import type { ComponentType, SVGProps } from "react";
 import { useAuth } from "../auth/AuthProvider";
+import { useEffect } from "react";
+import { api } from "../lib/api";
+import { clearCache, keys, load } from "../lib/store";
+import { GmailSyncProvider } from "../lib/useGmailSync";
 
 type NavItem = {
   to: string;
@@ -28,6 +32,18 @@ const NAV: NavItem[] = [
 export default function AppLayout() {
   const { session, signOut } = useAuth();
   const meta = session?.user.user_metadata ?? {};
+  const userId = session!.user.id; // RequireAuth guarantees a session
+
+  // Load both main pages' data up front, so switching tabs never waits.
+  useEffect(() => {
+    load(keys.dashboard(userId), api.getDashboard).catch(() => {});
+    load(keys.applications(userId), api.listApplications).catch(() => {});
+  }, [userId]);
+
+  const handleSignOut = async () => {
+    clearCache(); // don't leave this user's data in the browser
+    await signOut();
+  };
 
   return (
     <div className="flex min-h-screen flex-wrap bg-slate-50">
@@ -62,12 +78,14 @@ export default function AppLayout() {
             <div className="truncate text-sm font-semibold">{meta.full_name ?? "Account"}</div>
             <div className="truncate text-xs text-slate-500">{session?.user.email}</div>
           </div>
-          <button type="button" onClick={signOut} className="min-h-11 cursor-pointer text-sm font-semibold text-blue-700">Sign out</button>
+          <button type="button" onClick={handleSignOut} className="min-h-11 cursor-pointer text-sm font-semibold text-blue-700">Sign out</button>
         </div>
       </aside>
 
       <main className="min-w-0 flex-1 p-6 md:p-8">
-        <Outlet />
+        <GmailSyncProvider userId={userId}>
+          <Outlet />
+        </GmailSyncProvider>
       </main>
     </div>
   );

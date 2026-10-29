@@ -1,13 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Link } from "react-router";
 import { api } from "../lib/api";
 import { formatDateTime, formatRelativeDateTime } from "../lib/dates";
-import { useGmailSync } from "../lib/useGmailSync";
 import GmailSyncBar from "../components/GmailSyncBar";
+import { keys, useResource } from "../lib/store";
+import { useAuth } from "../auth/AuthProvider";
 import { mockApplications, mockStats } from "../data/mock";
-import type { Application, ApplicationStats, ApplicationStatus } from "../types";
+import type { Application, ApplicationStatus } from "../types";
 import { SearchIcon } from "../components/Icons";
-import { Card, STATUS_ORDER, ScoreBar, SrOnly, StatusPill } from "../components/ui";
+import { Card, Pager, STATUS_ORDER, ScoreBar, SrOnly, StatusPill, paginate } from "../components/ui";
+
+const ROW_HEIGHT = 57; // px, one table row
+const MIN_ROWS = 5;
+
+/** How many rows fit between the table's top edge and the bottom of the window. */
+function useRowsThatFit(ref: RefObject<HTMLElement | null>) {
+  const [rows, setRows] = useState(10);
+  useLayoutEffect(() => {
+    const measure = () => {
+      // Distance from the top of the page to the table, so the result doesn't depend on scroll position.
+      const top = (ref.current?.getBoundingClientRect().top ?? 0) + window.scrollY;
+      const reserved = 48 /* column headers */ + 64 /* pager */ + 32; /* bottom padding */
+      const available = window.innerHeight - top - reserved;
+      setRows(Math.max(MIN_ROWS, Math.floor(available / ROW_HEIGHT)));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [ref]);
+  return rows;
+}
 
 type Filter = "all" | ApplicationStatus;
 type SortKey = "company" | "role" | "status" | "atsScore" | "lastUpdateAt";
@@ -59,27 +81,21 @@ function SortArrows({ dir }: { dir: SortDir | null }) {
 }
 
 export default function Applications() {
-  const [items, setItems] = useState<Application[]>(mockApplications);
-  const [stats, setStats] = useState<ApplicationStats>(mockStats);
-  const [usingMock, setUsingMock] = useState(true);
+  const { session } = useAuth();
+  // Cached data shows instantly; it refreshes in the background.
+  const res = useResource(keys.applications(session!.user.id), api.listApplications);
+  // Sample data only when the server can't be reached and nothing is cached.
+  const usingMock = res.data === null && res.status === "error";
+  const data = res.data ?? (usingMock ? { items: mockApplications, stats: mockStats } : null);
+  const items = data?.items ?? [];
+  const stats = data?.stats;
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "lastUpdateAt", dir: "desc" });
 
-  // Load from the FastAPI backend; keep the sample data if it isn't running.
-  const load = useCallback(() => {
-    api
-      .listApplications()
-      .then((data) => {
-        setItems(data.items);
-        setStats(data.stats);
-        setUsingMock(false);
-      })
-      .catch(() => setUsingMock(true));
-  }, []);
-
-  useEffect(load, [load]);
-  const sync = useGmailSync(load); // reload the table whenever a sync finishes
+  const tableRef = useRef<HTMLDivElement>(null);
+  const pageSize = useRowsThatFit(tableRef);
+  const [pageNum, setPageNum] = useState(1);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -93,14 +109,18 @@ export default function Applications() {
       .sort((a, b) => compare(a, b, sort.key, sign));
   }, [items, filter, query, sort]);
 
+  // Back to page 1 whenever the filter, search or sort changes.
+  useEffect(() => setPageNum(1), [filter, query, sort]);
+  const { pageItems, page, pages } = paginate(visible, pageNum, pageSize);
+
   const toggleSort = (key: SortKey, firstDir: SortDir) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: firstDir }));
 
   const tiles = [
-    { label: "Applied", value: stats.applied, warn: false },
-    { label: "Interviewing", value: stats.interviewing, warn: false },
-    { label: "Offers", value: stats.offers, warn: false },
-    { label: "Follow-ups due", value: stats.followUpsDue, warn: true },
+    { label: "Applied", value: stats?.applied, warn: false },
+    { label: "Interviewing", value: stats?.interviewing, warn: false },
+    { label: "Offers", value: stats?.offers, warn: false },
+    { label: "Follow-ups due", value: stats?.followUpsDue, warn: true },
   ];
 
   return (
@@ -115,13 +135,17 @@ export default function Applications() {
         </div>
       </div>
 
-      <GmailSyncBar sync={sync} />
+      <GmailSyncBar />
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         {tiles.map((t) => (
           <Card key={t.label} className="p-5">
             <div className="text-[13px] text-slate-500">{t.label}</div>
-            <div className={`mt-1.5 text-[32px] font-bold ${t.warn ? "text-amber-700" : ""}`}>{t.value}</div>
+            {t.value === undefined ? (
+              <div className="mt-3 h-8 w-12 animate-pulse rounded bg-slate-100" aria-hidden="true" />
+            ) : (
+              <div className={`mt-1.5 text-[32px] font-bold ${t.warn ? "text-amber-700" : ""}`}>{t.value}</div>
+            )}
           </Card>
         ))}
       </div>
@@ -161,7 +185,7 @@ export default function Applications() {
           </label>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" ref={tableRef}>
           <table className="w-full min-w-[760px] border-collapse text-sm">
             <thead>
               <tr className="text-left">
@@ -193,7 +217,15 @@ export default function Applications() {
               </tr>
             </thead>
             <tbody>
-              {visible.map((a) => {
+              {!data &&
+                Array.from({ length: MIN_ROWS }, (_, i) => (
+                  <tr key={`skeleton-${i}`} className="border-t border-slate-100" aria-hidden="true">
+                    <td colSpan={6} className="px-5 py-4">
+                      <div className="h-5 animate-pulse rounded bg-slate-100" />
+                    </td>
+                  </tr>
+                ))}
+              {pageItems.map((a) => {
                 // Tailored here but no email has confirmed it was submitted: greyed out.
                 const pending = a.status === null;
                 return (
@@ -237,7 +269,7 @@ export default function Applications() {
                   </tr>
                 );
               })}
-              {visible.length === 0 && (
+              {data && visible.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-5 py-10 text-center text-slate-500">
                     No applications match.
@@ -247,6 +279,11 @@ export default function Applications() {
             </tbody>
           </table>
         </div>
+        {pages > 1 && (
+          <div className="border-t border-slate-200 px-5 py-3">
+            <Pager page={page} pages={pages} total={visible.length} size={pageSize} onPage={setPageNum} label="Applications pages" />
+          </div>
+        )}
       </Card>
     </div>
   );

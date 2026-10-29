@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import type { CalendarEvent } from "../../types";
 import { formatTime, parseISODate, toISODate } from "../../lib/dates";
-import { Card, STATUS_COLOR } from "../ui";
+import { Card, Pager, STATUS_COLOR, paginate } from "../ui";
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "../Icons";
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => new Date(2000, i, 1).toLocaleDateString("en-US", { month: "long" }));
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS_BACK = 24; // how far back the user can browse
 const MONTHS_AHEAD = 12;
+const AGENDA_PAGE_SIZE = 4; // events listed per page for the selected day
 
 // A month as a single number (year * 12 + month) so ranges are easy to compare.
 const monthIndex = (d: Date) => d.getFullYear() * 12 + d.getMonth();
@@ -28,6 +29,7 @@ export default function CalendarCard({ events, signedUpAt }: Props) {
   const [view, setView] = useState<"days" | "months">("days");
   const [cursor, setCursor] = useState(monthIndex(today)); // month being shown
   const [selected, setSelected] = useState(todayISO);
+  const [agendaPage, setAgendaPage] = useState(1);
 
   const year = Math.floor(cursor / 12);
   const month = cursor % 12;
@@ -50,20 +52,26 @@ export default function CalendarCard({ events, signedUpAt }: Props) {
   const nextDisabled = view === "days" ? cursor >= maxMonth : (year + 1) * 12 > maxMonth;
   const step = (dir: -1 | 1) => setCursor((c) => clamp(view === "days" ? c + dir : c + dir * 12));
 
+  const selectDay = (iso: string) => {
+    setSelected(iso);
+    setAgendaPage(1); // each day's list starts on its first page
+  };
+
   const goToday = () => {
     setCursor(monthIndex(today));
-    setSelected(todayISO);
+    selectDay(todayISO);
     setView("days");
   };
 
   const pickDay = (d: Date) => {
     const m = monthIndex(d);
     if (m < minMonth || m > maxMonth) return;
-    setSelected(toISODate(d));
+    selectDay(toISODate(d));
     if (m !== cursor) setCursor(m);
   };
 
   const agenda = byDate.get(selected) ?? [];
+  const agendaPaged = paginate(agenda, agendaPage, AGENDA_PAGE_SIZE);
   const selectedDate = parseISODate(selected);
 
   const navBtn =
@@ -117,6 +125,8 @@ export default function CalendarCard({ events, signedUpAt }: Props) {
                 const isToday = iso === todayISO;
                 const isSelected = iso === selected;
                 const dayEvents = byDate.get(iso) ?? [];
+                // Dots mark scheduled interviews only; emails are listed when the day is selected.
+                const interviews = dayEvents.filter((e) => e.scheduled);
                 const unavailable = monthIndex(d) < minMonth || monthIndex(d) > maxMonth;
                 const label =
                   d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }) +
@@ -142,7 +152,7 @@ export default function CalendarCard({ events, signedUpAt }: Props) {
                   >
                     <span>{d.getDate()}</span>
                     <span className="flex h-[5px] gap-[3px]" aria-hidden="true">
-                      {dayEvents.slice(0, 3).map((e) => (
+                      {interviews.slice(0, 3).map((e) => (
                         <span
                           key={e.id}
                           className="h-[5px] w-[5px] rounded-full"
@@ -194,7 +204,7 @@ export default function CalendarCard({ events, signedUpAt }: Props) {
           </h3>
           {agenda.length > 0 ? (
             <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
-              {agenda.map((e) => (
+              {agendaPaged.pageItems.map((e) => (
                 <li key={e.id} className="flex items-start gap-2.5">
                   <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ background: STATUS_COLOR[e.kind] }} aria-hidden="true" />
                   <span className="flex flex-col gap-0.5">
@@ -210,6 +220,16 @@ export default function CalendarCard({ events, signedUpAt }: Props) {
           ) : (
             <p className="m-0 text-sm text-slate-500">Nothing on this day.</p>
           )}
+          <div className="mt-auto">
+            <Pager
+              page={agendaPaged.page}
+              pages={agendaPaged.pages}
+              total={agenda.length}
+              size={AGENDA_PAGE_SIZE}
+              onPage={setAgendaPage}
+              label="Events on this day"
+            />
+          </div>
         </div>
       </div>
     </Card>

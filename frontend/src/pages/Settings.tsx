@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { api } from "../lib/api";
 import { formatDateTime } from "../lib/dates";
 import { useGmailSync } from "../lib/useGmailSync";
+import { clearCache } from "../lib/store";
 import { useAuth } from "../auth/AuthProvider";
 import { Card, btnPrimary, btnSecondary } from "../components/ui";
 import { deleteResume, fileUrl, listResumes, saveResume, uploadResume, type Resume } from "../lib/resumes";
@@ -228,14 +229,12 @@ function GmailCard() {
   const navigate = useNavigate();
   // Google sends the user back to /settings?gmail=connected|cancelled|error
   const [result] = useState(() => GMAIL_RESULT[new URLSearchParams(location.search).get("gmail") ?? ""]);
-  const sync = useGmailSync(undefined, { autoSync: false });
+  const sync = useGmailSync();
   const { status, error, syncing } = sync;
 
   useEffect(() => {
     if (location.search.includes("gmail=")) navigate({ search: "", hash: "gmail" }, { replace: true });
     if (location.hash === "#gmail") document.getElementById("gmail")?.scrollIntoView({ behavior: "smooth" });
-    // Poll after connecting so "Last synced" fills in when the first sync ends.
-    if (result?.ok) void sync.syncNow();
   }, []);
 
   async function disconnect() {
@@ -325,6 +324,7 @@ function DeleteAccountCard({ userId }: { userId: string }) {
     // The server already removed the user, so only clear this browser's session.
     try {
       localStorage.removeItem(`rb:dismissed-reminders:${userId}`);
+      clearCache();
     } catch {
       /* storage unavailable */
     }

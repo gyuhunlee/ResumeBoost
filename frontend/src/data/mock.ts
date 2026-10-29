@@ -51,10 +51,10 @@ export const mockDashboard: DashboardData = {
     { id: "e7", date: day(-1), kind: "offer", title: "Offer · Lumen Labs", detail: "Frontend Engineer" },
     { id: "e8", date: day(0), kind: "follow_up", title: "Follow-up due · Brightpath", detail: "No reply in 9 days" },
     { id: "e9", date: day(0), kind: "interviewing", title: "Interview invite · Northwind", detail: "Software Engineer" },
-    { id: "e10", date: day(2), time: "10:00", kind: "interviewing", title: "Interview · Northwind", detail: "Video call" },
+    { id: "e10", date: day(2), time: "10:00", kind: "interviewing", title: "Interview · Northwind", detail: "Video call", scheduled: true },
     { id: "e11", date: day(3), kind: "follow_up", title: "Follow-up due · Atlas Health", detail: "Backend Engineer" },
     { id: "e12", date: day(4), kind: "offer", title: "Offer deadline · Lumen Labs", detail: "Respond by end of day" },
-    { id: "e13", date: day(8), time: "13:30", kind: "interviewing", title: "Interview · Orbital", detail: "Onsite" },
+    { id: "e13", date: day(8), time: "13:30", kind: "interviewing", title: "Interview · Orbital", detail: "Onsite", scheduled: true },
   ],
   reminders: [
     { id: "r1", date: day(2), time: "10:00", kind: "interviewing", company: "Northwind", role: "Software Engineer", message: "Video interview with the engineering team" },

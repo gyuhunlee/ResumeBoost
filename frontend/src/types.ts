@@ -52,6 +52,8 @@ export interface GmailStatus {
   lastSyncedAt?: string | null;
   syncStatus?: "idle" | "running" | "error" | null;
   lastError?: string | null;
+  /** Returned by "Sync now": how many emails changed an application. */
+  changed?: number | null;
 }
 
 export interface ApplicationStats {
@@ -72,6 +74,8 @@ export interface CalendarEvent {
   kind: ApplicationStatus; // decides the dot color
   title: string; // e.g. "Interview · Northwind"
   detail: string; // e.g. "Software Engineer"
+  /** A scheduled interview. Only these get a dot on the calendar grid. */
+  scheduled?: boolean;
 }
 
 /** An upcoming item shown in the dashboard's notification panel. */

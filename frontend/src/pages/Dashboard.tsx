@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../lib/api";
 import { toISODate } from "../lib/dates";
@@ -11,7 +11,7 @@ import StatusRing from "../components/dashboard/StatusRing";
 import CalendarCard from "../components/dashboard/CalendarCard";
 import RemindersPanel from "../components/dashboard/RemindersPanel";
 import GmailSyncBar from "../components/GmailSyncBar";
-import { useGmailSync } from "../lib/useGmailSync";
+import { keys, useResource } from "../lib/store";
 
 // Dismissed reminders are remembered per user in this browser.
 // TODO: store them on the server once reminders live in the database.
@@ -36,23 +36,13 @@ function saveDismissed(userId: string, ids: Set<string>) {
 export default function Dashboard() {
   const { session } = useAuth();
   const userId = session?.user.id ?? "anonymous";
-  const [data, setData] = useState<DashboardData>(mockDashboard);
-  const [usingMock, setUsingMock] = useState(true);
+  // Cached data shows instantly; it refreshes in the background.
+  const res = useResource<DashboardData>(keys.dashboard(userId), api.getDashboard);
+  // Sample data only when the server can't be reached and nothing is cached.
+  const usingMock = res.data === null && res.status === "error";
+  const data = res.data ?? (usingMock ? mockDashboard : null);
   const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed(userId));
 
-  const load = useCallback(() => {
-    api
-      .getDashboard()
-      .then((d) => {
-        setData(d);
-        setUsingMock(false);
-      })
-      .catch(() => setUsingMock(true));
-  }, []);
-
-  useEffect(load, [load]);
-  // Opening the dashboard syncs Gmail if the last sync is over 15 minutes old.
-  const sync = useGmailSync(load);
 
   useEffect(() => setDismissed(loadDismissed(userId)), [userId]);
 
@@ -61,17 +51,17 @@ export default function Dashboard() {
   const signedUpAt = session?.user.created_at ? new Date(session.user.created_at) : null;
   const signupISO = signedUpAt ? toISODate(signedUpAt) : null;
   const events = useMemo(
-    () => (signupISO ? data.events.filter((e) => e.date >= signupISO) : data.events),
-    [data.events, signupISO],
+    () => (!data ? [] : signupISO ? data.events.filter((e) => e.date >= signupISO) : data.events),
+    [data, signupISO],
   );
 
   const todayISO = toISODate(new Date());
   const reminders = useMemo(
     () =>
-      data.reminders
+      (data?.reminders ?? [])
         .filter((r) => r.date >= todayISO && !dismissed.has(r.id))
         .sort((a, b) => (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? ""))),
-    [data.reminders, dismissed, todayISO],
+    [data, dismissed, todayISO],
   );
 
   const updateDismissed = (ids: Iterable<string>) => {
@@ -99,8 +89,11 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      <GmailSyncBar sync={sync} />
+      <GmailSyncBar />
 
+      {!data ? (
+        <DashboardSkeleton />
+      ) : (
       <div className="flex flex-wrap items-stretch gap-6">
         <div className="flex min-w-0 flex-[999_1_520px] flex-col gap-6">
           <StatusRing counts={data.counts} />
@@ -112,6 +105,21 @@ export default function Dashboard() {
           onClearAll={() => updateDismissed(reminders.map((r) => r.id))}
         />
       </div>
+      )}
+    </div>
+  );
+}
+
+/** Placeholder shapes for the first visit, before any data has been cached. */
+function DashboardSkeleton() {
+  const block = "animate-pulse rounded-xl border border-slate-200 bg-white";
+  return (
+    <div className="flex flex-wrap items-stretch gap-6" aria-busy="true" aria-label="Loading dashboard">
+      <div className="flex min-w-0 flex-[999_1_520px] flex-col gap-6">
+        <div className={`${block} h-56`} />
+        <div className={`${block} h-[440px]`} />
+      </div>
+      <div className={`${block} min-h-80 flex-[1_1_340px]`} />
     </div>
   );
 }

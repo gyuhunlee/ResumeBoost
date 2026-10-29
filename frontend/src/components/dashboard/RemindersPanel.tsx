@@ -1,6 +1,9 @@
+import { useState } from "react";
 import type { Reminder } from "../../types";
 import { formatTime, formatUpcomingDay } from "../../lib/dates";
-import { Card, STATUS_COLOR, STATUS_TEXT, STATUS_TINT } from "../ui";
+import { Card, Pager, STATUS_COLOR, STATUS_TEXT, STATUS_TINT, paginate } from "../ui";
+
+const PAGE_SIZE = 4;
 import { CheckIcon, XIcon } from "../Icons";
 
 const KIND_LABEL: Record<Reminder["kind"], string> = {
@@ -24,6 +27,8 @@ type Props = {
 };
 
 export default function RemindersPanel({ reminders, onDismiss, onClearAll }: Props) {
+  const [pageNum, setPageNum] = useState(1);
+  const { pageItems, page, pages } = paginate(reminders, pageNum, PAGE_SIZE);
   return (
     <Card className="flex min-w-0 flex-[1_1_340px] flex-col gap-4 p-6">
       <div className="flex items-center justify-between gap-3">
@@ -44,7 +49,7 @@ export default function RemindersPanel({ reminders, onDismiss, onClearAll }: Pro
 
       {reminders.length > 0 ? (
         <ul className="m-0 flex list-none flex-col gap-3 p-0">
-          {reminders.map((r) => (
+          {pageItems.map((r) => (
             <li key={r.id} className="relative flex items-start gap-3 rounded-[10px] border border-slate-200 py-3.5 pr-11 pl-3.5">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ background: STATUS_TINT[r.kind] }} aria-hidden="true">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: STATUS_COLOR[r.kind] }} />
@@ -81,6 +86,11 @@ export default function RemindersPanel({ reminders, onDismiss, onClearAll }: Pro
           </span>
         </div>
       )}
+
+      {/* Pinned to the bottom so the arrows stay put while paging */}
+      <div className="mt-auto">
+        <Pager page={page} pages={pages} total={reminders.length} size={PAGE_SIZE} onPage={setPageNum} label="Upcoming pages" />
+      </div>
     </Card>
   );
 }

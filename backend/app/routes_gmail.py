@@ -78,20 +78,31 @@ def status(user: CurrentUser = Depends(get_current_user)) -> GmailStatus:
                        last_error=acc["last_error"])
 
 
-@router.post("/api/gmail/sync", response_model=GmailStatus, status_code=202)
-def sync_now(background: BackgroundTasks, user: CurrentUser = Depends(get_current_user)) -> GmailStatus:
-    """Starts a sync in the background; the frontend polls /api/gmail/status until it's idle."""
+@router.post("/api/gmail/sync", response_model=GmailStatus)
+def sync_now(user: CurrentUser = Depends(get_current_user)) -> GmailStatus:
+    """Runs a sync and answers when it's done (incremental syncs take a few seconds).
+
+    If another sync already holds the lock (the first backfill, another tab, or the
+    daily job), answers right away with sync_status="running" and the frontend
+    polls /api/gmail/status until it finishes.
+    """
     acc = _account(user.id)
     if not acc:
         raise HTTPException(409, "Connect Gmail first.")
     try:
-        # Take the lock now, so the very next status poll already says "running".
         locked = acquire_lock(user.id)
-        background.add_task(_safe_sync, user.id, locked)
     except AlreadyRunning:
-        pass  # a sync is in progress (another tab, or the daily job); just report it
+        return GmailStatus(connected=True, gmail_address=acc["gmail_address"],
+                           last_synced_at=acc["last_synced_at"], sync_status="running")
+    changed = None
+    try:
+        changed = run_locked(user.id, locked)
+    except Exception:
+        pass  # run_locked saved the reason in last_error; returned below
+    acc = _account(user.id) or acc
     return GmailStatus(connected=True, gmail_address=acc["gmail_address"],
-                       last_synced_at=acc["last_synced_at"], sync_status="running")
+                       last_synced_at=acc["last_synced_at"], sync_status=acc["sync_status"],
+                       last_error=acc["last_error"], changed=changed)
 
 
 @router.delete("/api/gmail", status_code=204)
