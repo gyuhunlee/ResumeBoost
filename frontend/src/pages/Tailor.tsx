@@ -11,7 +11,7 @@ import type {
   TailorScore,
   TailorStatus,
 } from "../types";
-import { CheckIcon, ChevronLeftIcon, SparkleIcon } from "../components/Icons";
+import { CheckIcon, SparkleIcon } from "../components/Icons";
 import { Card, Chip, ScoreRing, btnPrimary, btnSecondary } from "../components/ui";
 
 const inputCls =
@@ -61,24 +61,13 @@ export default function Tailor() {
   const status = session?.status;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 px-6 py-3.5">
-          <div className="flex flex-wrap items-center gap-5">
-            <Link
-              to="/applications"
-              className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-slate-600 no-underline hover:text-slate-900"
-            >
-              <ChevronLeftIcon size={16} />
-              Applications
-            </Link>
-            <h1 className="m-0 text-lg font-semibold">Tailor resume</h1>
-          </div>
-          <Stepper status={status} />
-        </div>
-      </header>
+    <div className="mx-auto flex max-w-[1280px] flex-col gap-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h1 className="m-0 text-[28px] font-bold tracking-tight">Tailor resume</h1>
+        <Stepper status={status} />
+      </div>
 
-      <div className="mx-auto flex max-w-[1280px] flex-wrap items-start gap-6 px-6 pt-7 pb-12">
+      <div className="flex flex-wrap items-start gap-6">
         <section aria-label="Job details" className="flex min-w-0 flex-[1_1_360px] flex-col gap-4">
           {session ? (
             <JobSummary session={session} onNew={reset} />

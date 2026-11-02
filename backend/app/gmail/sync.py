@@ -127,6 +127,7 @@ def _process(user_id: str, gmail: client.Gmail, ids: list[str]) -> int:
 
     apps = db.select("applications", {"user_id": eq(user_id), "select": "*"})
     changed = 0
+    tracked: list[str] = []
     for meta in candidates:
         received = datetime.fromtimestamp(meta.internal_date_ms / 1000, timezone.utc)
         body = gmail.body_text(meta.id)
@@ -136,7 +137,23 @@ def _process(user_id: str, gmail: client.Gmail, ids: list[str]) -> int:
         app = _apply(user_id, apps, meta, c, received)
         if app:
             changed += 1
+            tracked.append(meta.id)
+    _mark_read(gmail, tracked)
     return changed
+
+
+def _mark_read(gmail: client.Gmail, ids: list[str]) -> None:
+    """Mark emails the tracker recorded as read in Gmail. Unrelated mail is left alone."""
+    if not ids:
+        return
+    try:
+        gmail.mark_read(ids)
+    except client.MissingScope:
+        log.info("gmail.modify not granted yet; skipping mark-as-read until the user reconnects")
+    except client.GmailAuthError:
+        raise
+    except Exception:
+        log.warning("couldn't mark %d emails as read", len(ids), exc_info=True)
 
 
 # Where an email may move an application. An "applied" confirmation that arrives
@@ -184,6 +201,7 @@ def _apply(user_id: str, apps: list[dict[str, Any]], meta: client.Message, c, re
         "received_at": iso(received),
         "interview_at": iso(c.interview_at) if c.interview_at else None,
         "confidence": c.confidence,
+        "from_recruiter": c.from_recruiter,
     }, on_conflict="user_id,gmail_message_id", ignore_duplicates=True)
     return app
 

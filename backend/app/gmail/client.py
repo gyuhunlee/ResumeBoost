@@ -17,11 +17,16 @@ AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
-SCOPES = "openid email https://www.googleapis.com/auth/gmail.readonly"
+# gmail.modify lets the tracker mark the emails it processed as read (it never deletes or sends).
+SCOPES = "openid email https://www.googleapis.com/auth/gmail.modify"
 
 
 class GmailAuthError(Exception):
     """The refresh token was revoked or expired; the user must reconnect."""
+
+
+class MissingScope(Exception):
+    """The user connected before gmail.modify was requested; they must reconnect to allow it."""
 
 
 class HistoryExpired(Exception):
@@ -149,6 +154,17 @@ class Gmail:
             return r.json()
         r.raise_for_status()
         return {}
+
+    def mark_read(self, message_ids: list[str]) -> None:
+        """Remove the UNREAD label from these messages (up to 1000 per call)."""
+        for i in range(0, len(message_ids), 1000):
+            r = self._c.post("/messages/batchModify",
+                             json={"ids": message_ids[i:i + 1000], "removeLabelIds": ["UNREAD"]})
+            if r.status_code == 403:
+                raise MissingScope(r.text[:200])
+            if r.status_code == 401:
+                raise GmailAuthError("Access token rejected")
+            r.raise_for_status()
 
     def current_history_id(self) -> str:
         return str(self._get("/profile")["historyId"])

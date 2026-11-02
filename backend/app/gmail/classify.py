@@ -54,6 +54,22 @@ def sender_domain(sender: str) -> str:
     return parseaddr(sender)[1].rpartition("@")[2].lower()
 
 
+# Mailbox names that a person doesn't reply from.
+_AUTOMATED_LOCAL = re.compile(
+    r"^(no-?reply|do-?not-?reply|donotreply|notifications?|notify|alerts?|mailer|"
+    r"auto(mated|-?confirm)?|system|jobs|careers|recruiting|talent|hiring|hr|"
+    r"applications?|apply|candidates?|info|support|team)([+._-].*)?$", re.I)
+
+
+def is_automated_sender(sender: str) -> bool:
+    """True for ATS mail and no-reply style addresses; False when a person likely wrote it."""
+    addr = parseaddr(sender)[1].lower()
+    local, _, domain = addr.partition("@")
+    if any(domain == d or domain.endswith("." + d) for d in ATS_DOMAINS):
+        return True
+    return bool(_AUTOMATED_LOCAL.match(local))
+
+
 def prefilter(sender: str, subject: str, labels: list[str]) -> bool:
     if SKIP_LABELS & set(labels):
         return False
@@ -72,6 +88,7 @@ class Classification:
     role: str
     confidence: float
     interview_at: datetime | None = None
+    from_recruiter: bool = False  # written by a person (recruiter/hiring manager), not an automated system
 
 
 PROMPT = """You read emails for a job-application tracker. Decide if this email is a
@@ -84,6 +101,7 @@ Return JSON only:
   "company": "hiring company name, not the ATS vendor (e.g. Acme, not Greenhouse)",
   "role": "job title, or empty string if not stated",
   "interview_at": "ISO 8601 datetime with offset if a specific interview time is given, else null",
+  "from_recruiter": "true if a real person (recruiter, hiring manager) wrote this to the recipient personally; false for automated/templated system mail",
   "confidence": number 0-1}}
 
 Types: applied = application received/confirmation; interviewing = interview
@@ -98,12 +116,18 @@ Body:
 
 
 def classify(sender: str, subject: str, body: str, received: datetime) -> Classification:
+    c = None
     if settings.gemini_api_key:
         try:
-            return _classify_llm(sender, subject, body, received)
+            c = _classify_llm(sender, subject, body, received)
         except Exception as e:  # network error, quota, bad JSON → don't lose the email
             log.warning("LLM classify failed, using rules: %s", e)
-    return _classify_rules(sender, subject, body)
+    if c is None:
+        c = _classify_rules(sender, subject, body)
+    # A no-reply/ATS address is never a person, whatever the model thinks.
+    if is_automated_sender(sender):
+        c.from_recruiter = False
+    return c
 
 
 def _classify_llm(sender: str, subject: str, body: str, received: datetime) -> Classification:
@@ -134,6 +158,7 @@ def _classify_llm(sender: str, subject: str, body: str, received: datetime) -> C
         role=(data.get("role") or "").strip(),
         confidence=float(data.get("confidence") or 0),
         interview_at=interview_at,
+        from_recruiter=bool(data.get("from_recruiter")),
     )
 
 
@@ -180,4 +205,5 @@ def _classify_rules(sender: str, subject: str, body: str) -> Classification:
 
     ok = kind != "other" and bool(company)
     return Classification(is_job_related=ok, type=kind, company=company, role=role,
-                          confidence=0.7 if ok else 0.2)
+                          confidence=0.7 if ok else 0.2,
+                          from_recruiter=not is_automated_sender(sender))

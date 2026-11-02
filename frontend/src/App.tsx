@@ -17,9 +17,9 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/applications" element={<Applications />} />
           <Route path="/applications/:id" element={<ApplicationDetail />} />
+          <Route path="/tailor" element={<Tailor />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
-      <Route path="/tailor" element={<Tailor />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

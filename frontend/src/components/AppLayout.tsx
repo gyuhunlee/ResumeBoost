@@ -3,7 +3,6 @@ import Logo from "./Logo";
 import {
   BriefcaseIcon,
   DashboardIcon,
-  SearchIcon,
   SettingsIcon,
   SparkleIcon,
 } from "./Icons";
@@ -20,12 +19,10 @@ type NavItem = {
   icon: ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 };
 
-// /research doesn't have a page yet; add its route in App.tsx.
 const NAV: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: DashboardIcon },
   { to: "/applications", label: "Applications", icon: BriefcaseIcon },
   { to: "/tailor", label: "Tailor resume", icon: SparkleIcon },
-  { to: "/research", label: "Company research", icon: SearchIcon },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 

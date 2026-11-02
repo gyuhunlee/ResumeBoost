@@ -56,12 +56,15 @@ export default function Dashboard() {
   );
 
   const todayISO = toISODate(new Date());
+  // Upcoming shows interviews in the next 2 weeks only.
+  const twoWeeksISO = toISODate(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000));
   const reminders = useMemo(
     () =>
       (data?.reminders ?? [])
         .filter((r) => r.date >= todayISO && !dismissed.has(r.id))
+        .filter((r) => r.kind !== "interviewing" || r.date <= twoWeeksISO)
         .sort((a, b) => (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? ""))),
-    [data, dismissed, todayISO],
+    [data, dismissed, todayISO, twoWeeksISO],
   );
 
   const updateDismissed = (ids: Iterable<string>) => {

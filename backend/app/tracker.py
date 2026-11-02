@@ -6,6 +6,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .db import db, eq
+from .gmail.classify import is_automated_sender
 from .gmail.matching import find_match, norm_company, norm_role
 from .schemas import (
     Application,
@@ -19,6 +20,8 @@ from .schemas import (
 )
 
 FOLLOW_UP_AFTER = timedelta(days=7)  # "applied" with no news for this long → follow up
+UPCOMING_INTERVIEW_WINDOW = timedelta(days=14)  # Upcoming panel: interviews in the next 2 weeks
+RECRUITER_FOLLOW_UP_AFTER = timedelta(days=7)   # Upcoming panel: recruiter email unanswered this long
 
 
 def _dt(value: str | None) -> datetime | None:
@@ -124,7 +127,8 @@ def dashboard(user_id: str, tz_name: str | None) -> DashboardData:
     rows = _rows(user_id)
     by_id = {r["id"]: r for r in rows}
     emails = db.select("email_events", {"user_id": eq(user_id), "order": "received_at.asc",
-                                        "select": "id,application_id,type,received_at,interview_at,subject"})
+                                        "select": "id,application_id,type,received_at,interview_at,"
+                                                  "subject,sender,from_recruiter"})
 
     def local(ts: datetime) -> tuple[date, str]:
         t = ts.astimezone(tz)
@@ -144,10 +148,6 @@ def dashboard(user_id: str, tz_name: str | None) -> DashboardData:
             due_day = due.astimezone(tz).date()
             events.append(CalendarEvent(id=f"follow-{r['id']}", date=due_day, kind="follow_up",
                                         title=f"Follow-up due · {r['company']}", detail=r["role"] or "No reply yet"))
-            reminders.append(Reminder(
-                id=f"follow-{r['id']}-{due_day}", date=max(due_day, today), kind="follow_up",
-                company=r["company"], role=r["role"],
-                message=f"No reply since {_dt(r['status_updated_at']).astimezone(tz):%b %-d}. Consider a follow-up email."))
 
     for e in emails:
         app = by_id.get(e["application_id"])
@@ -163,9 +163,31 @@ def dashboard(user_id: str, tz_name: str | None) -> DashboardData:
             events.append(CalendarEvent(id=f"{e['id']}-iv", date=d2, time=t2, kind="interviewing",
                                         title=f"Interview · {app['company']}", detail=app["role"],
                                         scheduled=True))
-            if when >= now:
+            if now <= when <= now + UPCOMING_INTERVIEW_WINDOW:
                 reminders.append(Reminder(id=f"iv-{e['id']}", date=d2, time=t2, kind="interviewing",
                                           company=app["company"], role=app["role"],
                                           message="Upcoming interview"))
+
+    # Follow-ups: the latest email on an application came from a recruiter (a person,
+    # not an automated system) and nothing newer has arrived for a week.
+    latest: dict[str, dict[str, Any]] = {}
+    for e in emails:  # sorted oldest first, so the last one wins
+        latest[e["application_id"]] = e
+    for app_id, e in latest.items():
+        app = by_id.get(app_id)
+        if not app or app["status"] == "rejected":
+            continue
+        from_person = e["from_recruiter"]
+        if from_person is None:  # recorded before migration 004
+            from_person = not is_automated_sender(e["sender"])
+        received = _dt(e["received_at"])
+        if not from_person or now - received < RECRUITER_FOLLOW_UP_AFTER:
+            continue
+        due_day = (received + RECRUITER_FOLLOW_UP_AFTER).astimezone(tz).date()
+        reminders.append(Reminder(
+            id=f"follow-{e['id']}", date=max(due_day, today), kind="follow_up",
+            company=app["company"], role=app["role"],
+            message=f"No reply since the recruiter's email on {received.astimezone(tz):%b %-d}. "
+                    "Consider a follow-up."))
 
     return DashboardData(counts=StatusCounts(**counts), events=events, reminders=reminders)
