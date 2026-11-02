@@ -27,12 +27,14 @@ export function Chip({
   tone,
 }: {
   children: ReactNode;
-  tone: "match" | "missing";
+  tone: "match" | "partial" | "missing";
 }) {
   const styles =
     tone === "match"
       ? "bg-green-50 text-green-700"
-      : "bg-orange-50 text-amber-700";
+      : tone === "partial"
+        ? "bg-yellow-50 text-yellow-800"
+        : "bg-orange-50 text-amber-700";
   return (
     <span className={`rounded-md px-2.5 py-1 text-[13px] ${styles}`}>
       {children}

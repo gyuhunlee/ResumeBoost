@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     # Optional. Without a key the email classifier falls back to keyword rules.
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+    # Model for the tailoring agent (tool calling). Empty = use gemini_model.
+    tailor_model: str = ""
 
     @property
     def gmail_redirect_uri(self) -> str:

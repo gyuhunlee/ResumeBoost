@@ -4,8 +4,10 @@ import type {
   ApplicationStats,
   GmailStatus,
   DashboardData,
-  TailorRequest,
-  TailorResult,
+  TailorAnswer,
+  TailorDecision,
+  TailorSession,
+  TailorStartRequest,
 } from "../types";
 import { supabase } from "./supabase";
 
@@ -48,10 +50,19 @@ export const api = {
 
   deleteAccount: () => request<void>("/api/account", { method: "DELETE" }),
 
-  tailor: (body: TailorRequest) =>
-    request<TailorResult>("/api/tailor", {
+  startTailor: (body: TailorStartRequest) =>
+    request<TailorSession>("/api/tailor/sessions", { method: "POST", body: JSON.stringify(body) }),
+  getTailorSession: (id: string) =>
+    request<TailorSession>(`/api/tailor/sessions/${encodeURIComponent(id)}`),
+  answerTailor: (id: string, answers: TailorAnswer[]) =>
+    request<TailorSession>(`/api/tailor/sessions/${encodeURIComponent(id)}/answers`, {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ answers }),
+    }),
+  finalizeTailor: (id: string, decisions: TailorDecision[]) =>
+    request<TailorSession>(`/api/tailor/sessions/${encodeURIComponent(id)}/finalize`, {
+      method: "POST",
+      body: JSON.stringify({ decisions }),
     }),
   extractResumeText: (file: File) => {
     const body = new FormData();

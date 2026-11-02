@@ -57,6 +57,11 @@ class DB:
         self._client.delete(f"/rest/v1/{table}", params=params).raise_for_status()
 
     # ---- Storage -----------------------------------------------------------
+    def upload_file(self, bucket: str, path: str, data: bytes, content_type: str) -> None:
+        """Create or overwrite <bucket>/<path>."""
+        self._client.post(f"/storage/v1/object/{bucket}/{path}", content=data,
+                          headers={"Content-Type": content_type, "x-upsert": "true"}).raise_for_status()
+
     def remove_user_files(self, bucket: str, user_id: str) -> None:
         """Delete every object under <bucket>/<user_id>/."""
         for _ in range(100):  # 100 files per page; the guard stops a runaway loop

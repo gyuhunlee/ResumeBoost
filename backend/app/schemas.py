@@ -105,31 +105,88 @@ class DashboardData(CamelModel):
     reminders: list[Reminder]
 
 
-class TailorRequest(CamelModel):
+# ---- Resume tailoring agent ---------------------------------------------------------
+class TailorStart(CamelModel):
     company: str = Field(min_length=1, max_length=200)
     role: str = Field(min_length=1, max_length=200)
-    job_description: str = Field(min_length=20, max_length=20_000)
-    # False for previews (the page's first load) so they don't create application rows.
-    save: bool = True
+    job_description: str = Field(min_length=50, max_length=20_000)
+    resume_id: str | None = None  # default: the most recently updated resume
 
 
-class Rewrite(CamelModel):
+class TailorStep(CamelModel):
+    tool: str
+    summary: str
+    at: dt.datetime
+
+
+class TailorQuestion(CamelModel):
     id: str
+    question: str
+    keyword: str = ""
+    answered: bool = False
+
+
+class TailorAnswer(CamelModel):
+    question_id: str
+    confirmed: bool | None = None  # None = skipped
+    detail: str = Field(default="", max_length=500)
+
+
+class TailorAnswers(CamelModel):
+    answers: list[TailorAnswer] = Field(max_length=10)
+
+
+class TailorScore(CamelModel):
+    score: int
+    matched: list[str]
+    partial: list[str]   # present only as a synonym, e.g. "Postgres" for "PostgreSQL"
+    missing: list[str]
+
+
+class TailorChange(CamelModel):
+    id: str
+    kind: Literal["rewrite", "add_bullets", "add_entry", "remove", "reorder"]
     section: str
+    entry: str
     before: str
     after: str
+    keywords: list[str]
+    reason: str
+    warnings: list[str]
 
 
-class CompanyBrief(CamelModel):
-    summary: str
-    highlights: list[str]
+class FormatIssue(CamelModel):
+    severity: Literal["warning", "info"]
+    message: str
+    target_id: str | None = None
 
 
-class TailorResult(CamelModel):
-    original_score: int
-    score: int
-    matched_keywords: list[str]
-    missing_keywords: list[str]
-    rewrites: list[Rewrite]
-    company_brief: CompanyBrief
-    application_id: str | None = None  # the applications row this tailoring was saved to
+class TailorSession(CamelModel):
+    id: str
+    status: Literal["running", "needs_input", "review", "finalized", "error"]
+    company: str
+    role: str
+    error: str | None = None
+    ai_enabled: bool = True
+    job_title: str = ""
+    steps: list[TailorStep] = []
+    questions: list[TailorQuestion] = []
+    baseline: TailorScore | None = None
+    projected: TailorScore | None = None   # score if every change is accepted
+    changes: list[TailorChange] = []
+    format_issues: list[FormatIssue] = []
+    summary: str = ""
+    final_score: int | None = None
+    application_id: str | None = None
+    pdf_path: str | None = None    # private 'resumes' bucket; the browser signs a URL
+    docx_path: str | None = None
+
+
+class TailorDecision(CamelModel):
+    change_id: str
+    action: Literal["accept", "reject", "edit"]
+    text: str | None = Field(default=None, max_length=3000)
+
+
+class TailorFinalize(CamelModel):
+    decisions: list[TailorDecision] = Field(max_length=50)

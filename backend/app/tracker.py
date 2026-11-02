@@ -82,11 +82,16 @@ def get_application(user_id: str, app_id: str) -> ApplicationDetail | None:
     )
 
 
-def save_tailored(user_id: str, company: str, role: str, job_description: str, ats_score: int) -> str:
-    """Create (or merge into) the application row for a tailored resume. Returns its id."""
+def save_tailored(user_id: str, company: str, role: str, job_description: str, ats_score: int,
+                  tailored_resume_path: str | None = None) -> str:
+    """Create (or merge into) the application row for a tailored resume. Returns its id.
+    Matching uses the same company/role keys as the Gmail sync, so a confirmation
+    email later attaches to this row instead of creating a duplicate."""
     apps = db.select("applications", {"user_id": eq(user_id), "select": "*"})
     match = find_match(apps, company, role)
-    fields = {"job_description": job_description, "ats_score": ats_score}
+    fields: dict = {"job_description": job_description, "ats_score": ats_score}
+    if tailored_resume_path:
+        fields["tailored_resume_path"] = tailored_resume_path
     if match.application:
         app = match.application
         if app["source"] == "gmail":

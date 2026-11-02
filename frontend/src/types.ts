@@ -95,30 +95,91 @@ export interface DashboardData {
   reminders: Reminder[];
 }
 
-export interface Rewrite {
-  id: string;
-  section: string;
-  before: string;
-  after: string;
+// ---- Resume tailoring agent (mirror backend/app/schemas.py) ----
+
+export type TailorStatus = "running" | "needs_input" | "review" | "finalized" | "error";
+export type TailorChangeKind = "rewrite" | "add_bullets" | "add_entry" | "remove" | "reorder";
+
+export interface TailorStep {
+  tool: string;
+  summary: string;
+  at: string;
 }
 
-export interface TailorRequest {
+export interface TailorQuestion {
+  id: string;
+  question: string;
+  keyword: string;
+  answered: boolean;
+}
+
+export interface TailorScore {
+  score: number;
+  matched: string[];
+  /** Present only as a synonym ("Postgres" for "PostgreSQL"). */
+  partial: string[];
+  missing: string[];
+}
+
+export interface TailorChange {
+  id: string;
+  kind: TailorChangeKind;
+  section: string;
+  entry: string;
+  before: string;
+  after: string;
+  keywords: string[];
+  reason: string;
+  /** Soft warnings from the claim checker, e.g. a name that isn't in the original resume. */
+  warnings: string[];
+}
+
+export interface FormatIssue {
+  severity: "warning" | "info";
+  message: string;
+  targetId?: string | null;
+}
+
+export interface TailorSession {
+  id: string;
+  status: TailorStatus;
+  company: string;
+  role: string;
+  error?: string | null;
+  aiEnabled: boolean;
+  jobTitle: string;
+  steps: TailorStep[];
+  questions: TailorQuestion[];
+  baseline?: TailorScore | null;
+  /** Score if every change is accepted. */
+  projected?: TailorScore | null;
+  changes: TailorChange[];
+  formatIssues: FormatIssue[];
+  summary: string;
+  finalScore?: number | null;
+  applicationId?: string | null;
+  pdfPath?: string | null;
+  docxPath?: string | null;
+}
+
+export interface TailorStartRequest {
   company: string;
   role: string;
   jobDescription: string;
-  /** false for previews, so they don't create an application. Defaults to true. */
-  save?: boolean;
+  resumeId?: string | null;
 }
 
-export interface TailorResult {
-  originalScore: number;
-  score: number;
-  matchedKeywords: string[];
-  missingKeywords: string[];
-  rewrites: Rewrite[];
-  companyBrief: {
-    summary: string;
-    highlights: string[];
-  };
-  applicationId?: string | null;
+export interface TailorAnswer {
+  questionId: string;
+  /** null = skipped */
+  confirmed: boolean | null;
+  detail: string;
+}
+
+export type TailorAction = "accept" | "reject" | "edit";
+
+export interface TailorDecision {
+  changeId: string;
+  action: TailorAction;
+  text?: string | null;
 }

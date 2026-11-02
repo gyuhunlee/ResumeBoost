@@ -1,4 +1,4 @@
-import type { Application, ApplicationStats, DashboardData, TailorResult } from "../types";
+import type { Application, ApplicationStats, DashboardData } from "../types";
 import { addDays, toISODate } from "../lib/dates";
 
 // Sample data used when the backend isn't running, so the UI still renders.
@@ -64,43 +64,3 @@ export const mockDashboard: DashboardData = {
     { id: "r5", date: day(8), time: "13:30", kind: "interviewing", company: "Orbital", role: "Platform Engineer", message: "Onsite interview" },
   ],
 };
-
-export const mockTailorResult: TailorResult = {
-  originalScore: 62,
-  score: 91,
-  matchedKeywords: ["React", "TypeScript", "Node.js", "REST APIs", "PostgreSQL", "CI/CD", "Web apps", "End-to-end ownership"],
-  missingKeywords: ["AWS", "Communication"],
-  rewrites: [
-    {
-      id: "r1",
-      section: "Experience · Acme Corp",
-      before: "Worked on the backend for a web app.",
-      after: "Built REST APIs in Node.js and PostgreSQL serving the app’s core booking flow.",
-    },
-    {
-      id: "r2",
-      section: "Experience · Acme Corp",
-      before: "Helped make deployments faster.",
-      after: "Set up a CI/CD pipeline with GitHub Actions, cutting release time from hours to minutes.",
-    },
-    {
-      id: "r3",
-      section: "Projects · Portfolio site",
-      before: "Made a personal website with React.",
-      after: "Developed a responsive portfolio in React and TypeScript with reusable UI components.",
-    },
-  ],
-  companyBrief: {
-    summary:
-      "[Short summary from the research agent: what the company does, its products, size and stage.]",
-    highlights: [
-      "[Recent news item]",
-      "[Tech stack signals from the posting]",
-      "[Talking point for your cover letter]",
-    ],
-  },
-};
-
-export const sampleJobDescription = `We're looking for a Software Engineer to build and scale our booking platform. You'll work across React, TypeScript and Node.js, design REST APIs backed by PostgreSQL, and own features end to end on AWS.
-
-Requirements: 2+ years building web apps, experience with CI/CD, strong communication skills…`;

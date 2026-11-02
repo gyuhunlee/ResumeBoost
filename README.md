@@ -14,13 +14,10 @@ resumeboost/
 │       └── types.ts    shared shapes (mirror backend/app/schemas.py)
 ├── backend/           Python FastAPI
 │   └── app/
-│       ├── main.py     routes: dashboard, applications, tailor, account delete, health
-│       ├── routes_gmail.py  Gmail connect / callback / status / sync / disconnect, daily sync-all
-│       ├── gmail/      client.py (OAuth + Gmail API), classify.py, matching.py, sync.py
-│       ├── tracker.py  builds Applications + Dashboard data from the database
-│       ├── db.py       thin Supabase REST client (service key, server only)
+│       ├── main.py     routes: GET /api/dashboard, GET /api/applications, GET /api/health
+│       ├── routes_tailor.py  /api/tailor/sessions… (start, poll, answer, finalize)
+│       ├── tailor/     the resume-tailoring agent and its tools (see below)
 │       ├── schemas.py  Pydantic models (snake_case in Python, camelCase in JSON)
-│       └── mock_data.py
 └── render.yaml        one-click deploy of the API to Render's free plan
 ```
 
@@ -59,53 +56,35 @@ Routes: `/` landing · `/dashboard` overview (status ring, calendar, reminders) 
    `npm run build`, output `dist`. Set `VITE_API_URL` to your Render URL.
    `vercel.json` handles client-side routing.
 
-## Gmail tracker
+## Resume tailoring agent
 
-How it works (`backend/app/gmail/`):
+`backend/app/tailor/` — code does what must be correct, the LLM does what needs judgment.
 
-```
-fetch new message IDs → prefilter (free) → classify (Gemini, or keyword rules) → match → upsert
-```
+| Tool | Module | How |
+|---|---|---|
+| `parse_resume` | `parse.py` | LLM split into sections/bullets with ids; rejected (rule parser used) if it reworded anything |
+| `analyze_job_description` | `jd.py` | LLM → required / preferred keywords; rule-based fallback |
+| `keyword_gap`, `score_match` | `keywords.py` | Deterministic: exact / synonym / missing, weighted 0–100 score |
+| `search_experience_bank`, `add_from_bank` | `bank.py`, `agent.py` | Experience bank (Settings) + the user's other resumes |
+| `rewrite_bullet`, `reorder`, `remove_item` | `agent.py` | Recorded as changes against the original, never applied in place |
+| `verify_claims` | `verify.py` | Hallucination guard: blocks unsupported numbers/skills, warns on unknown names |
+| `check_format` | `formatting.py` | Length, weak/long bullets, missing sections |
+| `ask_user` | `agent.py` | Pauses the run; answers resume it (state lives in `tailor_sessions`) |
+| `render_resume` | `render.py` | PDF (reportlab) + DOCX (python-docx), single-column ATS layout |
+| `save_tailored_resume` | `tracker.save_tailored` | Same company/role matching as the Gmail sync → no duplicates |
 
-- **When it syncs.** No always-on worker (Render's free plan sleeps). A sync runs when the Dashboard
-  or Applications page opens and the last sync is over 15 minutes old, when the user clicks
-  **Sync now**, and once a day for everyone via `.github/workflows/daily-gmail-sync.yml`.
-- **Where it left off.** The first sync searches mail received since sign-up. After that, Gmail's
-  `history` API returns only messages added after the stored `historyId`. If that id has expired
-  (about a week), it falls back to a date search.
-- **No duplicates.** Tailored resumes and inbox emails share one `applications` row, matched on a
-  normalized company name plus a fuzzy role match (`matching.py`). `email_events` has a unique
-  `(user_id, gmail_message_id)`, so re-reading an email can't double-count it. Uncertain matches
-  are flagged `needs_review`.
-- **Statuses.** Emails apply oldest first; a late "we received your application" never overwrites
-  an interview, offer or rejection. `applied` with no news for 7 days shows as **Follow up**.
-- **Privacy.** Read-only scope, refresh tokens encrypted with Fernet, email bodies never stored,
-  and the `gmail_accounts` table has RLS with no policies (backend only).
+The agent loop runs Gemini function calling (`llm.py`, free tier) for at most 10 turns. Without
+`GEMINI_API_KEY` the page still shows the keyword gap and score, just no rewrites.
 
-### Setup
+Setup: run `backend/supabase/003_tailor_agent.sql` in the Supabase SQL editor. Optional env vars:
+`TAILOR_MODEL` (defaults to `GEMINI_MODEL`) and `RESUME_FONT_PATH` (a `.ttf` such as DejaVuSans
+for non-Latin characters in PDFs; without one, the PDF uses Helvetica).
 
-1. Run `backend/supabase/002_applications_gmail.sql` in the Supabase SQL editor.
-2. Google Cloud Console → enable the **Gmail API**. On the OAuth consent screen add the
-   `gmail.readonly` scope and add yourself (and testers) as **test users**. `gmail.readonly` is a
-   restricted scope, so leave the app in Testing (up to 100 test users) unless you go through
-   Google's verification.
-3. In the OAuth client, add redirect URIs `http://localhost:8000/api/gmail/callback` and
-   `https://<your-render-app>.onrender.com/api/gmail/callback`.
-4. Set the new backend env vars (see `backend/.env.example`) locally and on Render.
-5. GitHub → Settings → Secrets → Actions: add `API_URL` and `CRON_SECRET`.
-
-Note: while the OAuth app is in Testing, Google expires refresh tokens after 7 days. The UI shows
-"Reconnect Gmail" when that happens.
-
-## Delete account
-
-Settings → Delete account calls `DELETE /api/account`, which revokes Gmail access, deletes the
-user's files in Storage, then deletes the Supabase auth user. Every table references
-`auth.users ON DELETE CASCADE`, so all rows go with it.
+Tests: `cd backend && python -m pytest -q` (the LLM is scripted, no network needed).
 
 ## Next steps
 
-- Replace `extract_keywords` and the mock rewrites in `backend/app/main.py` with LLM calls
-  (Gemini via Google AI Studio or Groq both have free tiers). Keep the rule that the agent
-  only rephrases facts already on the resume.
+- Company research agent for the tailor page.
+- Gmail tracker: Google OAuth with the `gmail.readonly` scope; classify confirmation/interview/
+  rejection emails and update the application rows.
 - Resume upload + parsing (PDF/DOCX) and PDF export.
