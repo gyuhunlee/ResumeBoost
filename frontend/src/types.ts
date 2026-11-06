@@ -168,8 +168,18 @@ export interface TailorSession {
   original?: ResumeDoc | null;
   /** Look of the uploaded file (fonts, sizes, alignment). */
   style?: ResumeStyle | null;
-  /** Last export: "original" = your .docx edited in place, "matched" = rebuilt in your style. */
+  /** Last export: "original" = your .docx edited in place, "matched" = rebuilt like your upload, "template". */
   formatMode?: string;
+  /** Looks to choose from: Classic, Modern, and "Like my upload" when it could be read. */
+  templates?: TemplateOption[];
+  /** Template to show first (the last one exported, else Classic). */
+  template?: string;
+}
+
+export interface TemplateOption {
+  id: string;
+  name: string;
+  style: ResumeStyle;
 }
 
 export interface TailorScoreCheck {
@@ -258,4 +268,6 @@ export interface TailorFinalizeRequest {
   decisions: TailorDecision[];
   /** The resume exactly as shown in the editable preview. */
   document: ResumeDoc;
+  /** Template id the files are rendered with. */
+  template: string;
 }

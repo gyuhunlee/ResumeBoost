@@ -26,10 +26,22 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `${res.status} ${res.statusText}`);
+    throw new Error(errorMessage(body?.detail) ?? `${res.status} ${res.statusText}`);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+/** FastAPI sends `detail` as a string, or for validation errors as a list of {msg, loc}. */
+function errorMessage(detail: unknown): string | null {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((d) => (typeof d?.msg === "string" ? d.msg.replace(/^Value error, /, "") : null))
+      .filter((m): m is string => !!m);
+    return msgs.length ? [...new Set(msgs)].join(" ") : null;
+  }
+  return null;
 }
 
 // The dashboard groups emails by day, so the server needs the user's time zone.

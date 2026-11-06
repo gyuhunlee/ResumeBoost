@@ -91,7 +91,8 @@ class TailorState(BaseModel):
     next_id: int = 1
     style: ResumeStyle = Field(default_factory=ResumeStyle)   # look of the uploaded file
     source_path: str = ""      # the uploaded file in storage (a .docx is edited in place at finalize)
-    format_mode: str = ""      # how the last export kept the format: original | matched
+    format_mode: str = ""      # how the last export kept the format: original | matched | template
+    template: str = ""         # last template exported with ("" = not exported yet)
 
     def new_id(self, prefix: str) -> str:
         self.next_id += 1

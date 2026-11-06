@@ -65,6 +65,29 @@ class ResumeStyle(BaseModel):
     margin_y: float = 0.5
 
 
+# ---- templates ---------------------------------------------------------------------
+# Ready-made looks. "classic" is the default: rebuilding the exact look of an uploaded
+# file is best-effort, a template always comes out clean. "original" (the look read
+# from the upload) is offered next to these when it could be read.
+TEMPLATES: dict[str, tuple[str, ResumeStyle]] = {
+    "classic": ("Classic", ResumeStyle(
+        font="serif", font_name="Times New Roman", name_size=20, name_align="center", heading_size=11.5,
+        body_size=10.5, heading_upper=True, heading_rule=True, heading_color="", date_align="right",
+        bullet="•", contact_sep=" | ", margin_x=0.7, margin_y=0.6)),
+    "modern": ("Modern", ResumeStyle(
+        font="sans", font_name="Arial", name_size=22, name_align="left", heading_size=12,
+        body_size=10, heading_upper=False, heading_rule=True, heading_color="#1F4E79", date_align="right",
+        bullet="•", contact_sep=" • ", margin_x=0.65, margin_y=0.55)),
+}
+DEFAULT_TEMPLATE = "classic"
+
+
+def template_style(template: str, original: ResumeStyle | None) -> ResumeStyle:
+    if template == "original" and original is not None and original.source != "text":
+        return original
+    return TEMPLATES.get(template, TEMPLATES[DEFAULT_TEMPLATE])[1]
+
+
 # ---- helpers -----------------------------------------------------------------------
 def _key(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", s.lower())

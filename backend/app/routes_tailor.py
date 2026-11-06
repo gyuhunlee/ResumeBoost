@@ -42,6 +42,7 @@ from .schemas import (
     TailorSession,
     TailorStart,
     TailorStep,
+    TemplateOption,
 )
 from .tailor.agent import Answer, Context, TailorState, answer_questions, apply_changes, run, run_without_llm, start_state
 from .tailor.bank import from_resumes, from_rows
@@ -53,7 +54,8 @@ from .tailor.llm import get_llm
 from .tailor.parse import parse_resume
 from .tailor.models import ResumeDoc
 from .tailor.render import render_docx, render_pdf
-from .tailor.style import content_type_for, extract_style
+from .resume_text import PDF as PDF_TYPE, extract_text, looks_fragmented
+from .tailor.style import DEFAULT_TEMPLATE, TEMPLATES, content_type_for, extract_style, template_style
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tailor")
@@ -109,7 +111,16 @@ def _view(row: dict[str, Any]) -> TailorSession:
         original=st.original if row["status"] != "running" else None,
         style=st.style,
         format_mode=st.format_mode,
+        templates=_templates(st),
+        template=st.template or DEFAULT_TEMPLATE,
     )
+
+
+def _templates(st: TailorState) -> list[TemplateOption]:
+    out = [TemplateOption(id=k, name=name, style=style) for k, (name, style) in TEMPLATES.items()]
+    if st.style.source != "text":
+        out.append(TemplateOption(id="original", name="Like my upload", style=st.style))
+    return out
 
 
 def _context(user_id: str, resume_id: str) -> Context:
@@ -137,17 +148,34 @@ def _fail(sid: str, user_id: str, message: str) -> None:
 
 
 # ---- background work ---------------------------------------------------------------
+def _resume_text(user_id: str, resume: dict[str, Any], data: bytes | None) -> str:
+    """The resume's text. Uploads from before the PDF line rebuild can be one word per line;
+    re-read those from the file (and save the fixed text, so Settings shows it too)."""
+    content = resume["content"]
+    path = resume.get("file_path") or ""
+    if data and content_type_for(path) == PDF_TYPE and looks_fragmented(content):
+        fixed = extract_text(data, PDF_TYPE)
+        if fixed and not looks_fragmented(fixed):
+            try:
+                db.update("resumes", {"id": eq(resume["id"]), "user_id": eq(user_id)}, {"content": fixed})
+            except Exception:
+                log.warning("could not save re-extracted text for resume %s", resume["id"])
+            return fixed
+    return content
+
+
 def _run_new(sid: str, user_id: str, resume: dict[str, Any], req: TailorStart) -> None:
     try:
         llm = get_llm()
-        original = parse_resume(resume["content"], llm)
+        data = _download(resume.get("file_path") or "")
+        content = _resume_text(user_id, resume, data)
+        original = parse_resume(content, llm)
         if not any(True for _ in original.bullets()):
             return _fail(sid, user_id, "Couldn't find any resume content. Check the resume text in Settings.")
         job = analyze_job_description(req.job_description, req.role, llm)
         state = start_state(original, job, req.job_description, llm_used=llm is not None)
         state.source_path = resume.get("file_path") or ""
-        state.style = extract_style(_download(state.source_path), content_type_for(state.source_path),
-                                    original, resume["content"])
+        state.style = extract_style(data, content_type_for(state.source_path), original, content)
         _persist(sid, user_id, state, "running")
         if llm is None:
             status = run_without_llm(state)
@@ -251,14 +279,18 @@ def _clean(doc: ResumeDoc) -> ResumeDoc:
     return doc
 
 
-def _files(state: TailorState, doc: ResumeDoc) -> tuple[bytes, bytes, str]:
-    """(pdf, docx, format_mode). A .docx upload is edited in place when every change fits exactly."""
-    pdf = render_pdf(doc, state.style)
-    if state.style.source == "docx" and content_type_for(state.source_path) == DOCX:
+def _files(state: TailorState, doc: ResumeDoc, template: str) -> tuple[bytes, bytes, str]:
+    """(pdf, docx, format_mode). With "Like my upload" a .docx upload is edited in place when
+    every change fits exactly; otherwise both files are rendered from the template's style."""
+    style = template_style(template, state.style)
+    pdf = render_pdf(doc, style)
+    if template != "original" or style.source == "text":
+        return pdf, render_docx(doc, style), "template"
+    if style.source == "docx" and content_type_for(state.source_path) == DOCX:
         data = _download(state.source_path)
         if data and (edited := edit_docx(data, state.original, doc)):
             return pdf, edited, "original"
-    return pdf, render_docx(doc, state.style), "matched"
+    return pdf, render_docx(doc, style), "matched"
 
 
 @router.post("/sessions/{sid}/finalize", response_model=TailorSession)
@@ -282,7 +314,8 @@ def finalize(sid: str, body: TailorFinalize, user: CurrentUser = Depends(get_cur
     final = score_match(doc, state.job)["score"]
     pdf_path, docx_path = f"{user.id}/tailored-{sid}.pdf", f"{user.id}/tailored-{sid}.docx"
     try:
-        pdf, docx, mode = _files(state, doc)
+        template = body.template if body.template in TEMPLATES or body.template == "original" else DEFAULT_TEMPLATE
+        pdf, docx, mode = _files(state, doc, template)
         db.upload_file("resumes", pdf_path, pdf, PDF)
         db.upload_file("resumes", docx_path, docx, DOCX)
     except Exception:
@@ -292,6 +325,7 @@ def finalize(sid: str, body: TailorFinalize, user: CurrentUser = Depends(get_cur
     app_id = tracker.save_tailored(user.id, row["company"], row["role"], state.job_description, final, pdf_path)
     state.final_score = final
     state.format_mode = mode
+    state.template = template
     row = _save(sid, user.id, status="finalized", state=state.model_dump(mode="json"), application_id=app_id,
                 pdf_path=pdf_path, docx_path=docx_path)
     return _view(row)

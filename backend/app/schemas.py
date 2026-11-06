@@ -168,6 +168,12 @@ class FormatIssue(CamelModel):
     target_id: str | None = None
 
 
+class TemplateOption(CamelModel):
+    id: str            # classic | modern | original
+    name: str
+    style: ResumeStyle
+
+
 class TailorSession(CamelModel):
     id: str
     status: Literal["running", "needs_input", "review", "finalized", "error"]
@@ -189,7 +195,9 @@ class TailorSession(CamelModel):
     docx_path: str | None = None
     original: ResumeDoc | None = None  # parsed original; the browser rebuilds the preview from it + changes
     style: ResumeStyle | None = None   # look of the uploaded file, used by the preview
-    format_mode: str = ""              # last export: "original" (your .docx edited) | "matched" (rebuilt)
+    format_mode: str = ""              # last export: "original" (your .docx edited) | "matched" | "template"
+    templates: list[TemplateOption] = []  # looks to choose from in the review step
+    template: str = "classic"          # the one to show first
 
 
 class TailorDecision(CamelModel):
@@ -198,13 +206,13 @@ class TailorDecision(CamelModel):
     text: str | None = Field(default=None, max_length=3000)
 
 
-MAX_DOC_CHARS = 40_000
+MAX_DOC_CHARS = 200_000   # sanity limits only; a real resume is a few KB
 
 
 def _check_doc(doc: ResumeDoc) -> ResumeDoc:
     if len(doc.model_dump_json()) > MAX_DOC_CHARS:
         raise ValueError("Resume is too long.")
-    if len(doc.sections) > 30 or sum(len(s.entries) for s in doc.sections) > 120:
+    if len(doc.sections) > 80 or sum(len(s.entries) for s in doc.sections) > 600:
         raise ValueError("Resume has too many sections.")
     return doc
 
@@ -217,6 +225,7 @@ class TailorFinalize(CamelModel):
     # The resume exactly as shown in the editable preview (changes kept + the user's own edits).
     # Omitted by older clients; then the server applies `decisions` to the original.
     document: DocIn | None = None
+    template: str = Field(default="classic", max_length=20)
 
 
 class TailorScoreRequest(CamelModel):

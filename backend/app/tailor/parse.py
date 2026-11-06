@@ -40,10 +40,38 @@ DATE_RX = re.compile(
     rf"|(?:{MONTH}\s+)?(?:19|20)\d\d)\s*$",
     re.I,
 )
+TERMINAL = (".", "!", "?", ";")
+
+
+def _heading_like(body: str) -> bool:
+    """A job/project/school line rather than the middle of a sentence."""
+    if DATE_RX.search(body) or re.search(r" [—–|] | at ", body):
+        return True
+    words = re.findall(r"[A-Za-z][\w&'.+-]*", body)
+    if not words or len(words) > 8:
+        return False
+    caps = sum(w[0].isupper() for w in words if w.lower() not in ("of", "and", "the", "in", "for", "&", "at"))
+    return caps / len(words) >= 0.6
+
+
+def _sentence_like(body: str) -> bool:
+    return len(body.split()) >= 7 and not DATE_RX.search(body) and not re.search(r" [—–|] ", body)
+
+
 CONTACT_RX = re.compile(r"@|https?://|linkedin|github\.com|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\|", re.I)
 
 
+def _unspace(line: str) -> str:
+    """'E X P E R I E N C E' -> 'EXPERIENCE' (letter-spaced titles)."""
+    t = line.strip()
+    toks = t.split(" ")
+    if len(toks) >= 4 and sum(len(x) == 1 for x in toks if x) / len([x for x in toks if x]) > 0.7:
+        return re.sub(r"(?<=\S) (?=\S)", "", re.sub(r"\s{2,}", "  ", t)).replace("  ", " ")
+    return t
+
+
 def _kind_for(line: str) -> SectionKind | None:
+    line = _unspace(line)
     t = re.sub(r"[:\s]+$", "", line.strip()).lower()
     t = re.sub(r"\s+", " ", t)
     if t in _TITLE_TO_KIND:
@@ -76,9 +104,10 @@ def parse_rules(text: str) -> ResumeDoc:
         line = raw.strip()
         if not line:
             continue
+        indented = raw[:2] in ("  ", "\t ") or raw.startswith("\t")
         kind = _kind_for(line)
         if kind:
-            section = Section(id="", title=re.sub(r"[:\s]+$", "", line), kind=kind)
+            section = Section(id="", title=re.sub(r"[:\s]+$", "", _unspace(line)), kind=kind)
             doc.sections.append(section)
             entry = None
             continue
@@ -86,7 +115,7 @@ def parse_rules(text: str) -> ResumeDoc:
             if not doc.name and not CONTACT_RX.search(line):
                 doc.name = line
             else:
-                doc.contact += [p.strip() for p in re.split(r"\s*[|•·]\s*", line) if p.strip()]
+                doc.contact += [p.strip() for p in re.split(r"\s*[|•·◆]\s*|\s{2,}", line) if p.strip()]
             continue
 
         is_bullet = bool(BULLET_RX.match(line))
@@ -94,17 +123,26 @@ def parse_rules(text: str) -> ResumeDoc:
 
         if section.kind in ("summary", "skills"):
             entry = entry or new_entry()
-            if not is_bullet and entry.bullets and section.kind == "summary" and not entry.bullets[-1].text.endswith("."):
-                entry.bullets[-1].text += " " + body  # wrapped summary line
+            last = entry.bullets[-1].text if entry.bullets else ""
+            wrapped = not is_bullet and last and (
+                (section.kind == "summary" and not last.endswith("."))
+                or (section.kind == "skills" and (indented or body[:1].islower() or last.endswith(","))))
+            if wrapped:
+                entry.bullets[-1].text += " " + body  # wrapped line
             else:
                 entry.bullets.append(Bullet(id="", text=body))
             continue
 
+        last = entry.bullets[-1].text if entry and entry.bullets else ""
         if is_bullet:
             entry = entry or new_entry()
             entry.bullets.append(Bullet(id="", text=body))
-        elif entry and entry.bullets and body[:1].islower():
+        elif last and (body[:1].islower() or indented
+                       or (not last.endswith(TERMINAL) and not _heading_like(body))):
             entry.bullets[-1].text += " " + body  # PDF line wrap inside a bullet
+        elif entry and section.kind in ("experience", "projects", "other") and _sentence_like(body) \
+                and not _heading_like(body):
+            entry.bullets.append(Bullet(id="", text=body))  # a bullet whose glyph got lost (Word auto-bullets)
         elif entry and not entry.bullets and not entry.subheading:
             if not entry.dates and (m := DATE_RX.search(body)):
                 entry.dates = m.group(1).strip()

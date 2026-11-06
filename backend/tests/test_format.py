@@ -234,4 +234,102 @@ def test_finalize_document_is_validated():
     ok = TailorFinalize.model_validate({"decisions": [], "document": ResumeDoc(name="x").model_dump()})
     assert ok.document is not None and ok.document.name == "x"
     with pytest.raises(ValidationError):
-        TailorFinalize.model_validate({"decisions": [], "document": {"name": "x" * 50_000}})
+        TailorFinalize.model_validate({"decisions": [], "document": {"name": "x" * 250_000}})
+
+
+# ---- PDFs that place every word separately (Canva, some Word/LaTeX exports) ----------
+def make_word_by_word_pdf() -> bytes:
+    from reportlab.lib.pagesizes import LETTER
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.pdfgen import canvas
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=LETTER)
+    width, height = LETTER
+    y = height - 60
+
+    def line(text: str, x: float = 50, size: float = 10, font: str = "Helvetica", right: str = "") -> None:
+        nonlocal y
+        for w in text.split():
+            c.setFont(font, size)
+            c.drawString(x, y, w)   # one text object per word
+            x += stringWidth(w + " ", font, size)
+        if right:
+            c.setFont("Helvetica", size)
+            c.drawRightString(width - 50, y, right)
+        y -= size * 1.4
+
+    line("Gyuhun Lee", size=20, font="Helvetica-Bold")
+    line("gyuhun@example.com | (530) 555-0101 | linkedin.com/in/gyuhun", size=9)
+    line("E X P E R I E N C E", size=12, font="Helvetica-Bold")
+    line("Software Engineer Intern — Acme Corp", font="Helvetica-Bold", right="Jun 2024 – Sep 2024")
+    line("Davis, CA")
+    line("• Worked on the backend for a booking web app using Postgres and FastAPI, serving 3,000 users across")
+    line("three campuses with a 99.9% uptime target.", x=62)
+    line("• Helped make deployments faster with GitHub Actions, cutting release time by 40%.")
+    line("Barista — Blue Cup Coffee", font="Helvetica-Bold", right="2022 – 2024")
+    line("• Served 200+ customers per shift in a fast-paced environment.")
+    line("EDUCATION", size=12, font="Helvetica-Bold")
+    line("University of California, Davis", font="Helvetica-Bold", right="2020 – 2024")
+    line("B.S. Computer Science")
+    line("SKILLS", size=12, font="Helvetica-Bold")
+    line("Languages: Python, TypeScript, JavaScript, SQL")
+    c.save()
+    return buf.getvalue()
+
+
+def test_word_by_word_pdf_is_read_as_lines():
+    from pypdf import PdfReader
+    from app.resume_text import looks_fragmented
+
+    data = make_word_by_word_pdf()
+    plain = PdfReader(BytesIO(data)).pages[0].extract_text()
+    assert looks_fragmented(plain)                    # the bug: one word per line
+    text = extract_text(data, PDF)
+    assert not looks_fragmented(text)
+    assert "Software Engineer Intern — Acme Corp  Jun 2024 – Sep 2024" in text
+    assert "• Helped make deployments faster with GitHub Actions, cutting release time by 40%." in text
+
+
+def test_word_by_word_pdf_parses_into_proper_entries():
+    doc = parse_rules(extract_text(make_word_by_word_pdf(), PDF))
+    assert [s.kind for s in doc.sections] == ["experience", "education", "skills"]
+    assert doc.sections[0].title == "EXPERIENCE"       # letter-spaced title recognised
+    job, barista = doc.sections[0].entries
+    assert (job.heading, job.dates, job.subheading) == ("Software Engineer Intern — Acme Corp", "Jun 2024 – Sep 2024", "Davis, CA")
+    assert job.bullets[0].text.endswith("serving 3,000 users across three campuses with a 99.9% uptime target.")
+    assert len(job.bullets) == 2 and barista.dates == "2022 – 2024"
+    assert doc.sections[1].entries[0].subheading == "B.S. Computer Science"
+
+
+def test_bullet_glyphs_are_normalized():
+    from app.resume_text import normalize_bullets
+    assert normalize_bullets("Led a team\n\x7f Built it\n  ➢ Shipped\nPlain") == \
+        "• Led a team\n• Built it\n  • Shipped\nPlain"
+
+
+def test_glyphless_bullets_from_word_auto_lists():
+    d = Document()
+    d.add_paragraph("Gyuhun Lee")
+    d.add_paragraph("gyuhun@example.com")
+    d.add_paragraph("EXPERIENCE")
+    d.add_paragraph("Software Engineer Intern — Acme Corp\tJun 2024 – Sep 2024")
+    for t in BULLETS_1:
+        d.add_paragraph(t, style="List Bullet")  # Word auto-bullets: no glyph in the text
+    d.add_paragraph("Barista — Blue Cup Coffee\t2022 – 2024")
+    d.add_paragraph("Served 200+ customers per shift in a fast-paced environment.", style="List Bullet")
+    buf = BytesIO()
+    d.save(buf)
+    doc = parse_rules(extract_text(buf.getvalue(), DOCX))
+    job, barista = doc.sections[0].entries
+    assert [b.text for b in job.bullets] == BULLETS_1
+    assert barista.heading == "Barista — Blue Cup Coffee" and len(barista.bullets) == 1
+
+
+def test_templates():
+    from app.tailor.style import TEMPLATES, template_style
+    assert template_style("modern", None) == TEMPLATES["modern"][1]
+    assert template_style("nope", None) == TEMPLATES["classic"][1]
+    assert template_style("original", ResumeStyle()) == TEMPLATES["classic"][1]   # nothing read from the upload
+    mine = ResumeStyle(source="pdf", font_name="Lato")
+    assert template_style("original", mine) is mine

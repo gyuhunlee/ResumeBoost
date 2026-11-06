@@ -416,7 +416,9 @@ function Review({ session, onUpdated, onNew }: {
   onNew: () => void;
 }) {
   const original = session.original ?? null;
-  const style = session.style ?? DEFAULT_STYLE;
+  const templates = session.templates ?? [];
+  const [template, setTemplate] = useState(session.template ?? "classic");
+  const style = templates.find((t) => t.id === template)?.style ?? session.style ?? DEFAULT_STYLE;
   const [decisions, setDecisions] = useState<Decisions>({});
   const [edits, setEdits] = useState<DocEdits>(emptyEdits);
   const [showChanges, setShowChanges] = useState(true);
@@ -437,7 +439,8 @@ function Review({ session, onUpdated, onNew }: {
     setEdits(emptyEdits());
     setCheck(null);
     setExportedKey(null);
-  }, [session.id, session.changes]);
+    setTemplate(session.template ?? "classic");
+  }, [session.id, session.changes, session.template]);
 
   const base = useMemo(
     () => (original ? applyChanges(original, session.changes, decisions) : null),
@@ -454,15 +457,15 @@ function Review({ session, onUpdated, onNew }: {
 
   // A finalized session reopened later: what's on screen is what was exported.
   useEffect(() => {
-    if (session.status === "finalized" && exportedKey === null && key) setExportedKey(key);
-  }, [session.status, exportedKey, key]);
+    if (session.status === "finalized" && exportedKey === null && key) setExportedKey(key + template);
+  }, [session.status, exportedKey, key, template]);
 
   const pristine =
     !hasEdits(edits) && session.changes.every((c) => (decisions[c.id]?.action ?? "accept") === "accept");
   const fresh = !!check && check.key === key;
   const kept = session.changes.filter((c) => decisions[c.id]?.action !== "reject").length;
   const finalized = session.status === "finalized";
-  const exportStale = finalized && exportedKey !== null && exportedKey !== key;
+  const exportStale = finalized && exportedKey !== null && exportedKey !== key + template;
 
   function decide(c: TailorChange, d: Decision) {
     setDecisions((all) => ({ ...all, [c.id]: d }));
@@ -535,8 +538,8 @@ function Review({ session, onUpdated, onNew }: {
         action: decisions[c.id]?.action ?? "accept",
         text: decisions[c.id]?.action === "edit" ? decisions[c.id]?.text ?? "" : null,
       }));
-      onUpdated(await api.finalizeTailor(session.id, { decisions: list, document: doc }));
-      setExportedKey(k);
+      onUpdated(await api.finalizeTailor(session.id, { decisions: list, document: doc, template }));
+      setExportedKey(k + template);
       clearCache(); // Applications / Dashboard should refetch the new row
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't create the resume.");
@@ -554,7 +557,9 @@ function Review({ session, onUpdated, onNew }: {
         {doc && original ? (
           <>
             <PreviewToolbar
-              style={style.source}
+              templates={templates.map((t) => ({ id: t.id, name: t.name }))}
+              template={template}
+              onTemplate={setTemplate}
               diffCount={diffCount}
               showChanges={showChanges}
               onToggle={() => setShowChanges((v) => !v)}
@@ -600,7 +605,7 @@ function Review({ session, onUpdated, onNew }: {
             {finalized
               ? exportStale
                 ? "You've changed the resume since the last export. Re-create to update the files."
-                : formatModeText(session.formatMode, style.source)
+                : formatModeText(session.formatMode, session.style?.source ?? "text")
               : "Creates a PDF and a Word file of the resume exactly as shown, and saves the job to Applications."}
           </p>
           <button
@@ -686,32 +691,52 @@ function Review({ session, onUpdated, onNew }: {
 }
 
 function formatModeText(mode: string | undefined, source: string): string {
+  if (mode === "template") return "Saved to Applications. Both files use the template shown.";
   if (mode === "original") return "Saved to Applications. The Word file is your original document with only the text changed.";
   if (source === "pdf") return "Saved to Applications. Both files use the fonts, sizes and layout read from your PDF.";
   if (source === "docx") return "Saved to Applications. Your Word layout couldn't be edited in place, so both files were rebuilt in its fonts and layout.";
   return "Saved to Applications.";
 }
 
-function PreviewToolbar({ style, diffCount, showChanges, onToggle, edited, onUndo }: {
-  style: string;
+function PreviewToolbar({ templates, template, onTemplate, diffCount, showChanges, onToggle, edited, onUndo }: {
+  templates: { id: string; name: string }[];
+  template: string;
+  onTemplate: (id: string) => void;
   diffCount: number;
   showChanges: boolean;
   onToggle: () => void;
   edited: boolean;
   onUndo: () => void;
 }) {
-  const note =
-    style === "docx"
-      ? "Matches your Word file. Click any line to edit it."
-      : style === "pdf"
-        ? "Fonts and layout matched from your PDF. Click any line to edit it."
-        : "Click any line to edit it.";
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 className="m-0 text-base font-semibold">Tailored resume</h2>
-        <p className="m-0 text-[13px] text-slate-500">{note}</p>
+        <p className="m-0 text-[13px] text-slate-500">
+          Click any line to edit it. The PDF and Word files use the template you pick.
+        </p>
       </div>
+      {templates.length > 1 && (
+        <div role="radiogroup" aria-label="Template" className="flex w-full flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[13px] font-medium text-slate-600">Template</span>
+          {templates.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="radio"
+              aria-checked={template === t.id}
+              onClick={() => onTemplate(t.id)}
+              className={`min-h-9 cursor-pointer rounded-lg border px-3 text-[13px] font-semibold ${
+                template === t.id
+                  ? "border-blue-700 bg-blue-50 text-blue-700"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[13px] text-slate-600" aria-live="polite">
           {diffCount === 0 ? "Same as original" : `${diffCount} line${diffCount === 1 ? "" : "s"} changed`}

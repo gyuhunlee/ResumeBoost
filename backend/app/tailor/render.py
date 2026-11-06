@@ -104,8 +104,9 @@ def render_pdf(doc: ResumeDoc, style: ResumeStyle | None = None) -> bytes:
 
     buf = BytesIO()
     mx, my = st.margin_x * inch, st.margin_y * inch
-    pdf = SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=mx, rightMargin=mx, topMargin=my, bottomMargin=my,
-                            title=doc.name or "Resume", author=doc.name)
+    pad = 6  # reportlab frames keep 6pt padding; take it out of the margin so text sits exactly at mx
+    pdf = SimpleDocTemplate(buf, pagesize=LETTER, leftMargin=mx - pad, rightMargin=mx - pad, topMargin=my - pad,
+                            bottomMargin=my - pad, title=doc.name or "Resume", author=doc.name)
     width = LETTER[0] - 2 * mx
     story: list = []
     if doc.name:
@@ -130,7 +131,7 @@ def render_pdf(doc: ResumeDoc, style: ResumeStyle | None = None) -> bytes:
             if e.heading or e.dates:
                 if st.date_align == "right" and e.dates:
                     row = Table([[Paragraph(t(e.heading), head_s), Paragraph(t(e.dates), date_s)]],
-                                colWidths=[width * 0.74, width * 0.26])
+                                colWidths=[width * 0.74, width * 0.26], hAlign="LEFT")
                     row.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                                              ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
                                              ("VALIGN", (0, 0), (-1, -1), "TOP")]))
