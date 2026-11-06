@@ -1,9 +1,12 @@
 """Decides whether an email is about a job application, and what it says.
 
-Two stages:
+Three stages:
 1. prefilter()  free keyword/sender check that drops ~95% of an inbox
-2. classify()   LLM (Gemini) for the survivors, with a rule-based fallback
-                when no API key is set or the call fails
+2. extract      rule-based company/role/status with evidence (extract.py)
+3. classify()   LLM (Gemini) reads the email WITH those hints; its answer is
+                then checked against the email, and any field it got wrong
+                (e.g. the recruiter's name as the company) is replaced by
+                the rule-based value. Without an API key, rules alone decide.
 """
 
 import json
@@ -16,28 +19,35 @@ from email.utils import parseaddr
 import httpx
 
 from ..config import settings
+from .extract import (
+    ATS_DOMAINS,
+    JOB_BOARD_DOMAINS,
+    clean_body,
+    company_candidates,
+    company_supported,
+    extract_company,
+    extract_role,
+    extract_status,
+    is_bad_company,
+    is_vendor_domain,
+    role_ok,
+    sender_parts,
+    strong_status,
+)
 
 log = logging.getLogger(__name__)
-
-# Applicant tracking systems that send confirmation / status emails.
-ATS_DOMAINS = (
-    "greenhouse.io", "greenhouse-mail.io", "lever.co", "hire.lever.co", "myworkday.com",
-    "myworkdayjobs.com", "ashbyhq.com", "icims.com", "smartrecruiters.com", "workable.com",
-    "jobvite.com", "bamboohr.com", "taleo.net", "successfactors.com", "breezy.hr",
-    "recruitee.com", "jazzhr.com", "applytojob.com", "paylocity.com", "ultipro.com",
-    "rippling.com", "dover.com", "governmentjobs.com", "neogov.com",
-)
 
 SUBJECT_HINTS = re.compile(
     r"application|applying|applied|your candidacy|interview|next steps|unfortunately|"
     r"thank you for your interest|regarding your|offer letter|job offer|assessment|"
-    r"coding challenge|position|role at",
+    r"coding challenge|position|role at|exam(ination)?|eligib",
     re.I,
 )
 
 # Job boards send lots of "jobs you may like" mail that mentions roles but isn't an application.
 NOISE = re.compile(r"jobs? (alert|recommendation)|recommended jobs|new jobs for you|"
-                   r"is hiring|apply now|jobs you might|newsletter|webinar", re.I)
+                   r"is hiring|apply now|jobs you might|newsletter|webinar|jobs? (near|for) you|"
+                   r"people (also )?viewed|similar jobs|top job picks|saved (search|job)", re.I)
 
 SKIP_LABELS = {"CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "SPAM", "TRASH", "SENT", "DRAFT"}
 
@@ -46,7 +56,7 @@ BACKFILL_QUERY = (
     "-category:promotions -category:social "
     "{from:(" + " OR ".join(ATS_DOMAINS) + ") "
     'OR subject:(application OR applying OR applied OR interview OR "next steps" '
-    'OR unfortunately OR "thank you for your interest" OR offer OR assessment)}'
+    'OR unfortunately OR "thank you for your interest" OR offer OR assessment OR examination)}'
 )
 
 
@@ -62,10 +72,9 @@ _AUTOMATED_LOCAL = re.compile(
 
 
 def is_automated_sender(sender: str) -> bool:
-    """True for ATS mail and no-reply style addresses; False when a person likely wrote it."""
-    addr = parseaddr(sender)[1].lower()
-    local, _, domain = addr.partition("@")
-    if any(domain == d or domain.endswith("." + d) for d in ATS_DOMAINS):
+    """True for ATS/job-board mail and no-reply style addresses; False when a person likely wrote it."""
+    _, local, domain = sender_parts(sender)
+    if is_vendor_domain(domain):
         return True
     return bool(_AUTOMATED_LOCAL.match(local))
 
@@ -91,22 +100,44 @@ class Classification:
     from_recruiter: bool = False  # written by a person (recruiter/hiring manager), not an automated system
 
 
-PROMPT = """You read emails for a job-application tracker. Decide if this email is a
-message from an employer or recruiting system about an application the recipient
-SUBMITTED. Job alerts, newsletters, marketing and recruiter cold outreach are NOT.
+PROMPT = """You extract facts from one email for a job-application tracker.
+
+First decide if this email is from an employer (or its recruiting system) about
+an application the recipient SUBMITTED. Job alerts, newsletters, marketing,
+and cold outreach about jobs they never applied to are NOT.
+
+Rules for "company" (the HIRING organization):
+- NEVER the sender's personal name. "Jane Kim <jane@acme.com>" → the company is Acme, not Jane Kim.
+- NEVER the ATS or job board that delivered the email (Greenhouse, Lever, Workday,
+  iCIMS, LinkedIn, Indeed, NEOGOV/GovernmentJobs, ...). Look for who is hiring.
+- Prefer the name as written in the email body or signature ("City of Davis", "Northwind Health").
+- Government employers: use the agency name, e.g. "City of Davis", "Sacramento County".
+- If you can't tell, return "".
+
+Rules for "role": the exact job title as written, without req IDs, locations or
+"position"/"role" (e.g. "Wastewater Treatment Plant Operator-in-Training"). "" if not stated.
+
+Rules for "type":
+- applied: confirmation that the application was received/submitted.
+- interviewing: an actual invitation to interview, schedule a call, or take an
+  assessment/exam. A confirmation that only says "if selected, we will contact you
+  for an interview" is "applied", not "interviewing".
+- offer: a job offer.
+- rejected: not moving forward / position filled / not selected.
+- other: job-related but none of these.
+
+Hints found by a rule-based parser (may be wrong; verify against the email):
+{hints}
 
 Return JSON only:
 {{"is_job_related": bool,
   "type": "applied" | "interviewing" | "offer" | "rejected" | "other",
-  "company": "hiring company name, not the ATS vendor (e.g. Acme, not Greenhouse)",
-  "role": "job title, or empty string if not stated",
+  "company": string,
+  "company_evidence": "the exact words in the email that name the company",
+  "role": string,
   "interview_at": "ISO 8601 datetime with offset if a specific interview time is given, else null",
   "from_recruiter": "true if a real person (recruiter, hiring manager) wrote this to the recipient personally; false for automated/templated system mail",
   "confidence": number 0-1}}
-
-Types: applied = application received/confirmation; interviewing = interview
-invitation, scheduling, or assessment/coding challenge; offer = job offer;
-rejected = not moving forward; other = job-related but none of these.
 
 Email received: {received}
 From: {sender}
@@ -116,23 +147,65 @@ Body:
 
 
 def classify(sender: str, subject: str, body: str, received: datetime) -> Classification:
+    body = clean_body(body)
+    rules = _classify_rules(sender, subject, body)
     c = None
     if settings.gemini_api_key:
         try:
-            c = _classify_llm(sender, subject, body, received)
+            c = _classify_llm(sender, subject, body, received, rules)
         except Exception as e:  # network error, quota, bad JSON → don't lose the email
             log.warning("LLM classify failed, using rules: %s", e)
-    if c is None:
-        c = _classify_rules(sender, subject, body)
+    c = _reconcile(c, rules, sender, subject, body) if c else rules
     # A no-reply/ATS address is never a person, whatever the model thinks.
     if is_automated_sender(sender):
         c.from_recruiter = False
     return c
 
 
-def _classify_llm(sender: str, subject: str, body: str, received: datetime) -> Classification:
-    prompt = PROMPT.format(received=received.isoformat(), sender=sender,
-                           subject=subject, body=body[:1500])
+def _reconcile(llm: Classification, rules: Classification,
+               sender: str, subject: str, body: str) -> Classification:
+    """Keep the model's answer, but replace any field the email doesn't support."""
+    # Company: must not be a person/vendor/generic word and must be backed by the email.
+    if not company_supported(llm.company, sender, subject, body):
+        if llm.company:
+            log.info("LLM company %r not supported by the email; using %r", llm.company, rules.company)
+        llm.company = rules.company
+    # Role: must look like a job title.
+    if not role_ok(llm.role, llm.company):
+        llm.role = rules.role if role_ok(rules.role, llm.company) else ""
+    # Status: an explicit rejection/offer in the text beats a model's "applied".
+    plain = strong_status(subject, body)
+    if plain and llm.type in {"applied", "other"}:
+        llm.type = plain
+    if llm.type == "other" and rules.type != "other":
+        llm.type = rules.type
+    if not llm.company:
+        llm.is_job_related = False
+    return llm
+
+
+def _hints(sender: str, subject: str, body: str, rules: Classification) -> str:
+    name, _, domain = sender_parts(sender)
+    lines = []
+    if is_vendor_domain(domain):
+        kind = "job board" if any(domain.endswith(d) for d in JOB_BOARD_DOMAINS) else "ATS (applicant tracking system)"
+        lines.append(f"- The sender domain {domain} belongs to an {kind}, NOT the employer.")
+    if name and is_bad_company(name, sender):
+        lines.append(f"- The sender display name \"{name}\" is a person or vendor, NOT the company.")
+    cands = company_candidates(sender, subject, body)[:3]
+    if cands:
+        lines.append("- Company candidates: " + ", ".join(f"{c.name} ({'/'.join(c.sources)})" for c in cands))
+    if rules.role:
+        lines.append(f"- Role candidate: {rules.role}")
+    if rules.type != "other":
+        lines.append(f"- Status candidate: {rules.type}")
+    return "\n".join(lines) or "- none"
+
+
+def _classify_llm(sender: str, subject: str, body: str, received: datetime,
+                  rules: Classification) -> Classification:
+    prompt = PROMPT.format(received=received.isoformat(), sender=sender, subject=subject,
+                           body=body[:3000], hints=_hints(sender, subject, body, rules))
     r = httpx.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent",
         headers={"x-goog-api-key": settings.gemini_api_key},
@@ -151,9 +224,10 @@ def _classify_llm(sender: str, subject: str, body: str, received: datetime) -> C
                 interview_at = None  # a time without a zone could be off by hours; skip it
         except ValueError:
             pass
+    kind = data.get("type", "other")
     return Classification(
         is_job_related=bool(data.get("is_job_related")),
-        type=data.get("type", "other"),
+        type=kind if kind in {"applied", "interviewing", "offer", "rejected", "other"} else "other",
         company=(data.get("company") or "").strip(),
         role=(data.get("role") or "").strip(),
         confidence=float(data.get("confidence") or 0),
@@ -162,48 +236,11 @@ def _classify_llm(sender: str, subject: str, body: str, received: datetime) -> C
     )
 
 
-# ---- Rule-based fallback --------------------------------------------------------
-_RULES = [
-    ("rejected", re.compile(r"unfortunately|not (to )?(be )?mov(e|ing) forward|other candidates|"
-                            r"decided to pursue|will not be proceeding|position has been filled|"
-                            r"regret to inform", re.I)),
-    ("offer", re.compile(r"pleased to offer|offer letter|extend (you )?an offer|job offer", re.I)),
-    ("interviewing", re.compile(r"interview|schedule (a|some) time|phone screen|"
-                                r"coding (challenge|assessment)|next steps|availability", re.I)),
-    ("applied", re.compile(r"(received|receipt of) your application|thank you for (applying|your application)|"
-                           r"application (was )?(submitted|received)|thanks for applying", re.I)),
-]
-
-_COMPANY_PATTERNS = [
-    re.compile(r"(?:applying|application|interest) (?:to|at|with) ([A-Z][\w&.\- ]{1,40}?)(?:[!.,]| for | -|$)"),
-    re.compile(r"at ([A-Z][\w&.\- ]{1,40}?)(?:[!.,]| -|$)"),
-]
-# A run of capitalized words right before "position"/"role"/"opening", e.g. "the Data Analyst position".
-_ROLE_PATTERN = re.compile(r"(?i:for|the|as) (?:(?i:the|a|an) )?((?:[A-Z][\w/&+#.\-]*,? ){1,6})(?i:position|role|opening)")
-
-
 def _classify_rules(sender: str, subject: str, body: str) -> Classification:
-    text = f"{subject}\n{body[:3000]}"
-    kind = next((k for k, rx in _RULES if rx.search(text)), "other")
-
-    company = ""
-    for rx in _COMPANY_PATTERNS:
-        if m := rx.search(subject) or rx.search(body[:600]):
-            company = m.group(1).strip()
-            break
-    if not company:
-        # Use the display name ("Acme Recruiting <no-reply@greenhouse.io>") when it isn't the ATS itself.
-        name = parseaddr(sender)[0]
-        if m := re.search(r"\bat (.+)$", name):  # "Jane at Globex" → "Globex"
-            name = m.group(1)
-        name = re.sub(r"\b(recruiting|careers|talent|hiring|team|jobs|hr|no-?reply)\b", "", name, flags=re.I).strip(" -|")
-        if name and not any(d.split(".")[0] in name.lower() for d in ATS_DOMAINS):
-            company = name
-
-    role_match = _ROLE_PATTERN.search(subject) or _ROLE_PATTERN.search(body[:600])
-    role = role_match.group(1).strip(" ,") if role_match else ""
-
+    kind, strength = extract_status(subject, body)
+    company = extract_company(sender, subject, body)
+    role = extract_role(subject, body, company)
     ok = kind != "other" and bool(company)
+    confidence = min(0.95, 0.5 + 0.1 * strength) if ok else 0.2
     return Classification(is_job_related=ok, type=kind, company=company, role=role,
-                          confidence=0.7 if ok else 0.2,
-                          from_recruiter=not is_automated_sender(sender))
+                          confidence=confidence, from_recruiter=not is_automated_sender(sender))

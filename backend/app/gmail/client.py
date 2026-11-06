@@ -213,7 +213,9 @@ class Gmail:
         m = self._get(f"/messages/{message_id}", {"format": "full"})
         plain, rich = _collect_parts(m.get("payload", {}))
         text = plain or _html_to_text(rich)
-        return re.sub(r"\s+", " ", text).strip()
+        # Keep line breaks: "Job Title: …" lines and sign-offs are easier to read with them.
+        text = re.sub(r"[ \t\r\f\v\xa0]+", " ", text)
+        return re.sub(r"\s*\n\s*", "\n", text).strip()
 
 
 def _decode(data: str) -> str:
@@ -236,4 +238,5 @@ def _collect_parts(part: dict) -> tuple[str, str]:
 
 def _html_to_text(raw: str) -> str:
     raw = re.sub(r"(?is)<(script|style).*?</\1>", " ", raw)
+    raw = re.sub(r"(?i)<br\s*/?>|</(p|div|tr|li|h\d)>", "\n", raw)
     return html.unescape(re.sub(r"<[^>]+>", " ", raw))

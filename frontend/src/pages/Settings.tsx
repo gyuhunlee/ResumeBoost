@@ -7,7 +7,8 @@ import { useGmailSync } from "../lib/useGmailSync";
 import { clearCache } from "../lib/store";
 import { useAuth } from "../auth/AuthProvider";
 import { Card, btnPrimary, btnSecondary } from "../components/ui";
-import { deleteResume, fileUrl, listResumes, saveResume, uploadResume, type Resume } from "../lib/resumes";
+import ResumePreview from "../components/ResumePreview";
+import { deleteResume, fileUrl, listResumes, uploadResume, type Resume } from "../lib/resumes";
 import {
   createExperience,
   deleteExperience,
@@ -119,7 +120,7 @@ function ResumesCard({ userId }: { userId: string }) {
         <div>
           <h2 className="m-0 text-lg font-semibold">Resumes</h2>
           <p className="mt-1 mb-0 text-sm text-slate-600">
-            Upload a PDF or DOCX. The text is extracted so you can edit it before tailoring.
+            Upload a PDF or DOCX. Click a preview to open the file.
           </p>
         </div>
         <label className={`${btnPrimary} cursor-pointer text-sm`}>
@@ -131,41 +132,19 @@ function ResumesCard({ userId }: { userId: string }) {
       {error && <p role="alert" className="m-0 text-sm text-red-700">{error}</p>}
       {resumes.length === 0 && !busy && <p className="m-0 text-sm text-slate-500">No resumes yet.</p>}
 
-      {resumes.map((r) => (
-        <ResumeItem
-          key={r.id}
-          resume={r}
-          onSaved={(u) => setResumes((rs) => rs.map((x) => (x.id === u.id ? u : x)))}
-          onDeleted={() => setResumes((rs) => rs.filter((x) => x.id !== r.id))}
-        />
-      ))}
+      {resumes.length > 0 && (
+        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4 p-0">
+          {resumes.map((r) => (
+            <ResumeItem key={r.id} resume={r} onDeleted={() => setResumes((rs) => rs.filter((x) => x.id !== r.id))} />
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }
 
-function ResumeItem({ resume, onSaved, onDeleted }: {
-  resume: Resume;
-  onSaved: (r: Resume) => void;
-  onDeleted: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(resume.title);
-  const [content, setContent] = useState(resume.content);
-  const [saving, setSaving] = useState(false);
+function ResumeItem({ resume, onDeleted }: { resume: Resume; onDeleted: () => void }) {
   const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      onSaved(await saveResume(resume.id, { title: title.trim() || "My resume", content }));
-      setEditing(false);
-    } catch {
-      setError("Couldn't save. Try again.");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function remove() {
     if (!window.confirm(`Delete "${resume.title}"?`)) return;
@@ -174,60 +153,55 @@ function ResumeItem({ resume, onSaved, onDeleted }: {
   }
 
   async function openFile() {
-    if (resume.file_path) window.open(await fileUrl(resume.file_path), "_blank", "noopener");
+    if (!resume.file_path) return;
+    // Open the tab right away (popup blockers allow that), then point it at the signed link.
+    const tab = window.open("", "_blank");
+    try {
+      const url = await fileUrl(resume.file_path);
+      if (tab) tab.location.href = url;
+      else window.location.href = url;
+    } catch {
+      tab?.close();
+      setError("Couldn't open the file. Try again.");
+    }
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4">
-      {editing ? (
-        <>
-          <label className={labelCls}>
-            Title
-            <input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
-          <label className={labelCls}>
-            Resume text
-            <textarea
-              rows={16}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="resize-y rounded-lg border border-slate-300 p-3 font-mono text-[13px] leading-relaxed outline-none focus:border-blue-700"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button type="button" onClick={save} disabled={saving} className={`${btnPrimary} cursor-pointer text-sm`}>
-              {saving ? "Saving…" : "Save"}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setTitle(resume.title); setContent(resume.content); setEditing(false); }}
-              className={`${btnSecondary} cursor-pointer text-sm`}
-            >
-              Cancel
-            </button>
-          </div>
-        </>
-      ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="font-semibold">{resume.title}</div>
-            <div className="text-[13px] text-slate-500">
-              {resume.file_name} · updated {new Date(resume.updated_at).toLocaleDateString()}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {resume.file_path && (
-              <button type="button" onClick={openFile} className={`${btnSecondary} cursor-pointer text-sm`}>View file</button>
-            )}
-            <button type="button" onClick={() => setEditing(true)} className={`${btnSecondary} cursor-pointer text-sm`}>Edit</button>
-            <button type="button" onClick={remove} className={`${btnSecondary} cursor-pointer text-sm text-red-700`}>Delete</button>
+    <li className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-shadow hover:shadow-md">
+      <button
+        type="button"
+        onClick={openFile}
+        disabled={!resume.file_path}
+        className="block cursor-pointer border-b border-slate-200 bg-slate-100 p-3 disabled:cursor-default"
+        aria-label={`Open ${resume.file_name ?? resume.title}`}
+      >
+        <div className="overflow-hidden rounded-sm shadow-[0_1px_3px_rgba(15,23,42,0.15)]">
+          <ResumePreview path={resume.file_path} fileName={resume.file_name} fallbackText={resume.content} />
+        </div>
+      </button>
+      <div className="flex flex-col gap-3 p-3.5">
+        <div className="min-w-0">
+          <div className="truncate font-semibold" title={resume.title}>{resume.title}</div>
+          <div className="truncate text-[13px] text-slate-500" title={resume.file_name ?? undefined}>
+            {resume.file_name} · {new Date(resume.updated_at).toLocaleDateString()}
           </div>
         </div>
-      )}
-      {error && <p role="alert" className="m-0 text-sm text-red-700">{error}</p>}
-    </div>
+        <div className="flex flex-wrap gap-2">
+          {resume.file_path && (
+            <button type="button" onClick={openFile} className={`${btnSecondary} min-h-10 flex-1 cursor-pointer px-3 text-[13px]`}>
+              View file
+            </button>
+          )}
+          <button type="button" onClick={remove} className={`${btnSecondary} min-h-10 flex-1 cursor-pointer px-3 text-[13px] text-red-700`}>
+            Delete
+          </button>
+        </div>
+        {error && <p role="alert" className="m-0 text-[13px] text-red-700">{error}</p>}
+      </div>
+    </li>
   );
 }
+
 const GMAIL_RESULT: Record<string, { text: string; ok: boolean }> = {
   connected: { text: "Gmail connected. Your first sync is running.", ok: true },
   cancelled: { text: "Gmail wasn't connected.", ok: false },
