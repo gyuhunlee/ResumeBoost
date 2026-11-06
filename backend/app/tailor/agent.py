@@ -28,6 +28,7 @@ from .formatting import check_format
 from .keywords import canonical, keyword_gap, score_match, term_in
 from .llm import LLM, LLMError
 from .models import Bullet, Entry, JobAnalysis, ResumeDoc
+from .style import ResumeStyle
 from .verify import verify_claims
 
 log = logging.getLogger(__name__)
@@ -88,6 +89,9 @@ class TailorState(BaseModel):
     final_score: int | None = None
     llm_used: bool = True
     next_id: int = 1
+    style: ResumeStyle = Field(default_factory=ResumeStyle)   # look of the uploaded file
+    source_path: str = ""      # the uploaded file in storage (a .docx is edited in place at finalize)
+    format_mode: str = ""      # how the last export kept the format: original | matched
 
     def new_id(self, prefix: str) -> str:
         self.next_id += 1

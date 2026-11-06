@@ -74,6 +74,11 @@ class DB:
         _check(self._client.post(f"/storage/v1/object/{bucket}/{path}", content=data,
                                  headers={"Content-Type": content_type, "x-upsert": "true"}))
 
+    def download_file(self, bucket: str, path: str) -> bytes:
+        r = self._client.get(f"/storage/v1/object/{bucket}/{path}")
+        _check(r)
+        return r.content
+
     def remove_user_files(self, bucket: str, user_id: str) -> None:
         """Delete every object under <bucket>/<user_id>/."""
         for _ in range(100):  # 100 files per page; the guard stops a runaway loop

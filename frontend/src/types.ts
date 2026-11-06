@@ -132,6 +132,10 @@ export interface TailorChange {
   reason: string;
   /** Soft warnings from the claim checker, e.g. a name that isn't in the original resume. */
   warnings: string[];
+  /** Bullet / entry / section id in the original resume that the change applies to. */
+  targetId: string;
+  /** add_bullets: {bullets}, add_entry: {entry, position}, reorder: {order}. */
+  payload: Record<string, unknown>;
 }
 
 export interface FormatIssue {
@@ -160,6 +164,72 @@ export interface TailorSession {
   applicationId?: string | null;
   pdfPath?: string | null;
   docxPath?: string | null;
+  /** Parsed original resume; the preview is rebuilt from it + the changes. Absent while running. */
+  original?: ResumeDoc | null;
+  /** Look of the uploaded file (fonts, sizes, alignment). */
+  style?: ResumeStyle | null;
+  /** Last export: "original" = your .docx edited in place, "matched" = rebuilt in your style. */
+  formatMode?: string;
+}
+
+export interface TailorScoreCheck {
+  score: number;
+  keywordCoverage: number;
+  titleAlignment: number;
+  matched: string[];
+  partial: string[];
+  missing: string[];
+  formatIssues: FormatIssue[];
+}
+
+// ---- Structured resume (mirror backend/app/tailor/models.py and style.py) ----
+
+export type ResumeSectionKind = "summary" | "experience" | "projects" | "education" | "skills" | "other";
+
+export interface ResumeBullet {
+  id: string;
+  text: string;
+}
+
+export interface ResumeEntry {
+  id: string;
+  heading: string;
+  subheading: string;
+  dates: string;
+  bullets: ResumeBullet[];
+}
+
+export interface ResumeSection {
+  id: string;
+  title: string;
+  kind: ResumeSectionKind;
+  entries: ResumeEntry[];
+}
+
+export interface ResumeDoc {
+  name: string;
+  contact: string[];
+  sections: ResumeSection[];
+}
+
+export interface ResumeStyle {
+  source: "pdf" | "docx" | "text";
+  font: "serif" | "sans";
+  fontName: string;
+  nameSize: number;
+  headingSize: number;
+  bodySize: number;
+  nameAlign: "left" | "center";
+  headingBold: boolean;
+  headingUpper: boolean;
+  headingRule: boolean;
+  headingColor: string;
+  dateAlign: "right" | "inline";
+  bullet: string;
+  contactSep: string;
+  /** inches */
+  marginX: number;
+  marginY: number;
 }
 
 export interface TailorStartRequest {
@@ -182,4 +252,10 @@ export interface TailorDecision {
   changeId: string;
   action: TailorAction;
   text?: string | null;
+}
+
+export interface TailorFinalizeRequest {
+  decisions: TailorDecision[];
+  /** The resume exactly as shown in the editable preview. */
+  document: ResumeDoc;
 }

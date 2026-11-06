@@ -5,7 +5,9 @@ import type {
   GmailStatus,
   DashboardData,
   TailorAnswer,
-  TailorDecision,
+  ResumeDoc,
+  TailorFinalizeRequest,
+  TailorScoreCheck,
   TailorSession,
   TailorStartRequest,
 } from "../types";
@@ -59,10 +61,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ answers }),
     }),
-  finalizeTailor: (id: string, decisions: TailorDecision[]) =>
+  finalizeTailor: (id: string, body: TailorFinalizeRequest) =>
     request<TailorSession>(`/api/tailor/sessions/${encodeURIComponent(id)}/finalize`, {
       method: "POST",
-      body: JSON.stringify({ decisions }),
+      body: JSON.stringify(body),
+    }),
+  scoreTailor: (id: string, document: ResumeDoc) =>
+    request<TailorScoreCheck>(`/api/tailor/sessions/${encodeURIComponent(id)}/score`, {
+      method: "POST",
+      body: JSON.stringify({ document }),
     }),
   extractResumeText: (file: File) => {
     const body = new FormData();

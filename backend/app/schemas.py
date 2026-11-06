@@ -4,8 +4,13 @@ matching frontend/src/types.ts."""
 import datetime as dt
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+
+from .tailor.models import ResumeDoc
+from .tailor.style import ResumeStyle
 
 
 class CamelModel(BaseModel):
@@ -153,6 +158,8 @@ class TailorChange(CamelModel):
     keywords: list[str]
     reason: str
     warnings: list[str]
+    target_id: str = ""                    # bullet / entry / section the change applies to
+    payload: dict = Field(default_factory=dict)  # data the browser needs to apply it (new entry, order)
 
 
 class FormatIssue(CamelModel):
@@ -180,6 +187,9 @@ class TailorSession(CamelModel):
     application_id: str | None = None
     pdf_path: str | None = None    # private 'resumes' bucket; the browser signs a URL
     docx_path: str | None = None
+    original: ResumeDoc | None = None  # parsed original; the browser rebuilds the preview from it + changes
+    style: ResumeStyle | None = None   # look of the uploaded file, used by the preview
+    format_mode: str = ""              # last export: "original" (your .docx edited) | "matched" (rebuilt)
 
 
 class TailorDecision(CamelModel):
@@ -188,5 +198,37 @@ class TailorDecision(CamelModel):
     text: str | None = Field(default=None, max_length=3000)
 
 
+MAX_DOC_CHARS = 40_000
+
+
+def _check_doc(doc: ResumeDoc) -> ResumeDoc:
+    if len(doc.model_dump_json()) > MAX_DOC_CHARS:
+        raise ValueError("Resume is too long.")
+    if len(doc.sections) > 30 or sum(len(s.entries) for s in doc.sections) > 120:
+        raise ValueError("Resume has too many sections.")
+    return doc
+
+
+DocIn = Annotated[ResumeDoc, AfterValidator(_check_doc)]
+
+
 class TailorFinalize(CamelModel):
     decisions: list[TailorDecision] = Field(max_length=50)
+    # The resume exactly as shown in the editable preview (changes kept + the user's own edits).
+    # Omitted by older clients; then the server applies `decisions` to the original.
+    document: DocIn | None = None
+
+
+class TailorScoreRequest(CamelModel):
+    document: DocIn
+
+
+class TailorScoreCheck(CamelModel):
+    """ATS match for the resume as currently edited. Computed by code, same formula as the agent's."""
+    score: int
+    keyword_coverage: float
+    title_alignment: float
+    matched: list[str]
+    partial: list[str]
+    missing: list[str]
+    format_issues: list[FormatIssue]
