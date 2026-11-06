@@ -133,7 +133,7 @@ function ResumesCard({ userId }: { userId: string }) {
       {resumes.length === 0 && !busy && <p className="m-0 text-sm text-slate-500">No resumes yet.</p>}
 
       {resumes.length > 0 && (
-        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4 p-0">
+        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4 p-0">
           {resumes.map((r) => (
             <ResumeItem key={r.id} resume={r} onDeleted={() => setResumes((rs) => rs.filter((x) => x.id !== r.id))} />
           ))}

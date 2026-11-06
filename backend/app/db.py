@@ -12,6 +12,18 @@ import httpx
 from .config import settings
 
 
+class SupabaseError(RuntimeError):
+    """A failed Supabase call, carrying the response body (it names the real cause)."""
+
+
+def _check(r: httpx.Response) -> httpx.Response:
+    if r.is_error:
+        raise SupabaseError(
+            f"Supabase {r.status_code} on {r.request.method} {r.request.url.path}: {r.text}"
+        )
+    return r
+
+
 class DB:
     def __init__(self) -> None:
         key = settings.supabase_service_key
@@ -27,7 +39,7 @@ class DB:
     # ---- PostgREST ---------------------------------------------------------
     def select(self, table: str, params: dict[str, str]) -> list[dict[str, Any]]:
         r = self._client.get(f"/rest/v1/{table}", params=params)
-        r.raise_for_status()
+        _check(r)
         return r.json()
 
     def select_one(self, table: str, params: dict[str, str]) -> dict[str, Any] | None:
@@ -44,41 +56,41 @@ class DB:
         params = {"on_conflict": on_conflict} if on_conflict else {}
         r = self._client.post(f"/rest/v1/{table}", params=params, json=row,
                               headers={"Prefer": ",".join(prefer)})
-        r.raise_for_status()
+        _check(r)
         return r.json()
 
     def update(self, table: str, params: dict[str, str], changes: dict[str, Any]) -> list[dict[str, Any]]:
         r = self._client.patch(f"/rest/v1/{table}", params=params, json=changes,
                                headers={"Prefer": "return=representation"})
-        r.raise_for_status()
+        _check(r)
         return r.json()
 
     def delete(self, table: str, params: dict[str, str]) -> None:
-        self._client.delete(f"/rest/v1/{table}", params=params).raise_for_status()
+        _check(self._client.delete(f"/rest/v1/{table}", params=params))
 
     # ---- Storage -----------------------------------------------------------
     def upload_file(self, bucket: str, path: str, data: bytes, content_type: str) -> None:
         """Create or overwrite <bucket>/<path>."""
-        self._client.post(f"/storage/v1/object/{bucket}/{path}", content=data,
-                          headers={"Content-Type": content_type, "x-upsert": "true"}).raise_for_status()
+        _check(self._client.post(f"/storage/v1/object/{bucket}/{path}", content=data,
+                                 headers={"Content-Type": content_type, "x-upsert": "true"}))
 
     def remove_user_files(self, bucket: str, user_id: str) -> None:
         """Delete every object under <bucket>/<user_id>/."""
         for _ in range(100):  # 100 files per page; the guard stops a runaway loop
             r = self._client.post(f"/storage/v1/object/list/{bucket}",
                                   json={"prefix": user_id, "limit": 100, "offset": 0})
-            r.raise_for_status()
+            _check(r)
             names = [f"{user_id}/{o['name']}" for o in r.json() if o.get("id")]
             if not names:
                 return
-            self._client.request("DELETE", f"/storage/v1/object/{bucket}",
-                                 json={"prefixes": names}).raise_for_status()
+            _check(self._client.request("DELETE", f"/storage/v1/object/{bucket}",
+                                        json={"prefixes": names}))
         raise RuntimeError("Too many files to delete in one request")
 
     # ---- Auth admin --------------------------------------------------------
     def delete_auth_user(self, user_id: str) -> None:
         """Deletes the login. ON DELETE CASCADE removes the user's table rows."""
-        self._client.delete(f"/auth/v1/admin/users/{user_id}").raise_for_status()
+        _check(self._client.delete(f"/auth/v1/admin/users/{user_id}"))
 
 
 db = DB()
