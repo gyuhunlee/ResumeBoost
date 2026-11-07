@@ -92,7 +92,7 @@ export default function Tailor() {
           ) : (
             <StartForm onStarted={started} />
           )}
-          {session && session.steps.length > 0 && <Activity session={session} />}
+          {status === "error" && session!.steps.length > 0 && <Activity session={session!} collapsible />}
         </section>
 
         <section aria-label="Results" aria-busy={status === "running"} className="flex min-w-0 flex-[999_1_560px] flex-col gap-4">
@@ -306,6 +306,7 @@ function HowItWorks() {
 }
 
 function Working({ session }: { session: TailorSession }) {
+  const latest = session.steps.at(-1)?.summary;
   return (
     <Card className="flex flex-col items-start gap-3 p-6">
       <div className="flex items-center gap-3">
@@ -318,6 +319,12 @@ function Working({ session }: { session: TailorSession }) {
       {session.baseline && (
         <p className="m-0 text-sm text-slate-600">
           Current match score: <span className="font-semibold text-slate-900">{session.baseline.score}</span>
+        </p>
+      )}
+      {latest && (
+        <p className="m-0 flex items-center gap-2 text-sm text-slate-500" aria-live="polite">
+          <span aria-hidden className="size-2 shrink-0 animate-pulse rounded-full bg-blue-600" />
+          {latest}
         </p>
       )}
     </Card>
