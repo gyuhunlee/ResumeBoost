@@ -461,8 +461,7 @@ def run(state: TailorState, llm: LLM, ctx: Context,
         except LLMError as e:
             log.warning("agent turn %d failed: %s", state.turns, e)
             state.llm_error = describe_llm_error(str(e))
-            if state.llm_error == GENERIC_LLM_ERROR:  # unknown cause: show the actual error to debug from
-                state.llm_error = f"{GENERIC_LLM_ERROR[:-1]} ({str(e)[:200]})."
+            state.llm_error = f"{state.llm_error[:-1]} — {_short(str(e))}."  # the real error, to debug from
             state.log("error", f"{state.llm_error} Showing the changes made so far.")
             break
         state.contents.append(turn)
@@ -538,6 +537,14 @@ def _nudge(state: TailorState, parts: list[dict[str, Any]] | None = None) -> boo
 
 
 GENERIC_LLM_ERROR = "The AI model stopped responding."
+
+
+def _short(err: str) -> str:
+    """'Gemini 404 [m]: {"error": {"message": "..."}}' -> 'Gemini 404 [m]: ...' (just the message)."""
+    import re
+    m = re.search(r'"message":\s*"([^"]{0,220})', err)
+    head = err.split(":", 1)[0] if ":" in err else ""
+    return f"{head}: {m.group(1)}" if m and head else err[:220]
 
 
 def describe_llm_error(err: str) -> str:

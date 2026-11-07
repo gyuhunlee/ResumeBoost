@@ -62,7 +62,7 @@ class Gemini:
                 time.sleep(min(wait, self.MAX_WAIT))
                 continue
             if r.status_code >= 400:
-                raise LLMError(f"Gemini {r.status_code}: {r.text[:300]}")
+                raise LLMError(f"Gemini {r.status_code} [{self.model}]: {r.text[:300]}")
             data = r.json()
             cands = data.get("candidates") or []
             if not cands or "content" not in cands[0]:
@@ -114,4 +114,10 @@ def get_llm() -> LLM | None:
 
     if not settings.gemini_api_key:
         return None
-    return Gemini(settings.gemini_api_key, settings.tailor_model or settings.gemini_model)
+    return Gemini(settings.gemini_api_key.strip(), clean_model(settings.tailor_model or settings.gemini_model))
+
+
+def clean_model(name: str) -> str:
+    """'models/gemini-3.5-flash', '"gemini-3.5-flash" ' -> 'gemini-3.5-flash' (each of those 404s as-is)."""
+    name = name.strip().strip("'\"").strip()
+    return name.removeprefix("models/") or "gemini-2.5-flash"

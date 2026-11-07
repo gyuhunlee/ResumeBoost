@@ -298,3 +298,12 @@ def test_tool_schemas_are_gemini_valid():
     for t in TOOLS:  # Gemini 400s on an OBJECT schema with empty properties
         params = t.get("parameters")
         assert params is None or params.get("properties"), t["name"]
+
+
+def test_model_name_cleaned_and_error_shown():
+    from app.tailor.agent import _short
+    from app.tailor.llm import clean_model
+
+    assert clean_model(' "models/gemini-3.5-flash" ') == "gemini-3.5-flash"
+    err = 'Gemini 404 [x]: {"error": {"code": 404, "message": "models/x is not found for API version v1beta"}}'
+    assert _short(err) == "Gemini 404 [x]: models/x is not found for API version v1beta"
