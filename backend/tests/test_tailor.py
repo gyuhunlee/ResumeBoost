@@ -260,3 +260,33 @@ def test_agent_survives_model_failure():
     state = start_state(parse_rules(RESUME), job(), JD, llm_used=True)
     assert run(state, Broken(), Context([])) == "review"
     assert state.projected["score"] == state.baseline["score"]
+
+
+def test_agent_nudged_once_when_it_finishes_without_changes():
+    from app.tailor.agent import describe_llm_error
+
+    state = start_state(parse_rules(RESUME), job(), JD, llm_used=True)
+    fake = FakeLLM(turns=[
+        {"role": "model", "parts": [{"functionCall": {"name": "finish", "args": {"summary": "Looks good already."}}}]},
+        {"role": "model", "parts": [{"functionCall": {"name": "reorder", "args": {"container_id": "x", "ordered_ids": [], "reason": "r"}}}]},
+        {"role": "model", "parts": [{"text": "done"}]},
+    ])
+    assert run(state, fake, Context([])) == "review"
+    assert state.nudged and any(s.tool == "nudge" for s in state.steps)
+    assert "haven't changed" in fake.calls[1]["parts"][-1]["text"]
+    assert len(fake.turns) == 0  # second no-change stop is accepted, no infinite loop
+    assert "daily quota" in describe_llm_error("Gemini 429 daily quota exhausted")
+    assert "rate limit" in describe_llm_error("Gemini 429: x")
+    assert "timed out" in describe_llm_error("Gemini timeout after 90s")
+
+
+def test_model_failure_records_reason():
+    from app.tailor.llm import LLMError
+
+    class Broken(FakeLLM):
+        def generate(self, *a, **k):
+            raise LLMError("Gemini 429 daily quota exhausted")
+
+    state = start_state(parse_rules(RESUME), job(), JD, llm_used=True)
+    run(state, Broken(), Context([]))
+    assert not state.changes and "daily quota" in state.llm_error

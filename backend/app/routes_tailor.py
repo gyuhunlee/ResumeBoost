@@ -147,6 +147,20 @@ def _fail(sid: str, user_id: str, message: str) -> None:
         log.exception("could not mark session %s as failed", sid)
 
 
+def _flag_no_changes(sid: str, user_id: str, state: TailorState, status: str) -> None:
+    """An AI run that changed nothing isn't a result: say why instead of showing the original as 'tailored'."""
+    if status != "review" or state.changes or not state.llm_used:
+        return
+    if state.llm_error:
+        msg = f"No changes were made: {state.llm_error} Try again in a minute."
+    elif state.blocked:
+        msg = (f"No changes were made: all {state.blocked} AI rewrite(s) were blocked for adding skills or numbers "
+               "that aren't in your resume. Add that experience in Settings, or answer Yes to the agent's questions.")
+    else:
+        msg = "No changes were made: the AI found nothing to tailor. Try again, or paste the full job description."
+    _fail(sid, user_id, msg)
+
+
 # ---- background work ---------------------------------------------------------------
 def _resume_text(user_id: str, resume: dict[str, Any], data: bytes | None) -> str:
     """The resume's text. Uploads from before the PDF line rebuild can be one word per line;
@@ -183,6 +197,7 @@ def _run_new(sid: str, user_id: str, resume: dict[str, Any], req: TailorStart) -
             status = run(state, llm, _context(user_id, resume["id"]),
                          on_step=lambda s: _persist(sid, user_id, s, "running"))
         _persist(sid, user_id, state, status)
+        _flag_no_changes(sid, user_id, state, status)
     except Exception:
         log.exception("tailor session %s failed", sid)
         _fail(sid, user_id, "Something went wrong while tailoring. Try again.")
@@ -197,6 +212,7 @@ def _resume(sid: str, user_id: str, state: TailorState, resume_id: str | None) -
             status = run(state, llm, _context(user_id, resume_id or ""),
                          on_step=lambda s: _persist(sid, user_id, s, "running"))
         _persist(sid, user_id, state, status)
+        _flag_no_changes(sid, user_id, state, status)
     except Exception:
         log.exception("tailor session %s failed on resume", sid)
         _fail(sid, user_id, "Something went wrong while tailoring. Try again.")

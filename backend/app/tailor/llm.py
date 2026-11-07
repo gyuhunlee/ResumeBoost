@@ -45,7 +45,17 @@ class Gemini:
 
         url = API.format(model=self.model)
         for attempt in range(self.MAX_RETRIES + 1):
-            r = httpx.post(url, headers={"x-goog-api-key": self.api_key}, json=body, timeout=self.timeout)
+            try:
+                r = httpx.post(url, headers={"x-goog-api-key": self.api_key}, json=body, timeout=self.timeout)
+            except httpx.TimeoutException as e:
+                if attempt < 1:  # one retry; a second slow call would blow the run's time budget
+                    log.info("Gemini timed out, retrying once")
+                    continue
+                raise LLMError(f"Gemini timeout after {self.timeout:.0f}s") from e
+            except httpx.HTTPError as e:
+                raise LLMError(f"Gemini network error: {e}") from e
+            if r.status_code == 429 and "PerDay" in r.text:  # daily quota: waiting won't help
+                raise LLMError(f"Gemini 429 daily quota exhausted: {r.text[:300]}")
             if r.status_code in (429, 500, 503) and attempt < self.MAX_RETRIES:
                 wait = _retry_delay(r) or 2 ** (attempt + 1)
                 log.info("Gemini %s, retrying in %.0fs", r.status_code, wait)

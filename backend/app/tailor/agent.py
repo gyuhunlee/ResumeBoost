@@ -93,6 +93,9 @@ class TailorState(BaseModel):
     source_path: str = ""      # the uploaded file in storage (a .docx is edited in place at finalize)
     format_mode: str = ""      # how the last export kept the format: original | matched | template
     template: str = ""         # last template exported with ("" = not exported yet)
+    llm_error: str = ""        # why the model stopped early, if it did (shown when nothing changed)
+    blocked: int = 0           # rewrites rejected by verify_claims
+    nudged: bool = False       # already told the model it hadn't changed anything
 
     def new_id(self, prefix: str) -> str:
         self.next_id += 1
@@ -333,6 +336,7 @@ def execute(name: str, args: dict[str, Any], state: TailorState, ctx: Context) -
         sec, entry, bullet = found
         check = verify_claims(new_text, ctx.corpus(state), bullet.text)
         if not check["ok"]:
+            state.blocked += 1
             state.log(name, f"Blocked a rewrite in {sec.title} that added unsupported claims")
             return {"ok": False, "problems": check["problems"],
                     "hint": "Remove these claims, or ask_user if the user might really have them."}
@@ -459,13 +463,16 @@ def run(state: TailorState, llm: LLM, ctx: Context,
         try:
             turn = llm.generate(state.contents, system=SYSTEM, tools=TOOLS)
         except LLMError as e:
-            log.warning("agent turn failed: %s", e)
-            state.log("error", "The AI model stopped responding (rate limit or outage). Showing the changes made so far.")
+            log.warning("agent turn %d failed: %s", state.turns, e)
+            state.llm_error = describe_llm_error(str(e))
+            state.log("error", f"{state.llm_error} Showing the changes made so far.")
             break
         state.contents.append(turn)
         calls = [p["functionCall"] for p in turn.get("parts", []) if "functionCall" in p]
-        if not calls:  # plain text answer = done
+        if not calls:  # plain text answer = done (unless it changed nothing)
             text = " ".join(p.get("text", "") for p in turn.get("parts", [])).strip()
+            if _nudge(state):
+                continue
             state.summary = state.summary or text[:1000]
             break
 
@@ -497,7 +504,11 @@ def run(state: TailorState, llm: LLM, ctx: Context,
             state.pending = responses
             on_step(state)
             return "needs_input"
-        state.contents.append({"role": "user", "parts": _fill_asks(state, responses)})
+        parts = _fill_asks(state, responses)
+        if finished and not state.changes and _nudge(state, parts):
+            on_step(state)
+            continue
+        state.contents.append({"role": "user", "parts": parts})
         on_step(state)
         if finished:
             break
@@ -509,6 +520,39 @@ def run(state: TailorState, llm: LLM, ctx: Context,
                       "if you accept every change")
     on_step(state)
     return "review"
+
+
+NUDGE = ("You haven't changed the resume at all. The user wants it tailored to this job: call get_resume, then "
+         "rewrite_bullet on at least 3 bullets that can surface job keywords the resume already supports (exact "
+         "keyword spelling, stronger verbs, relevant facts first), and reorder entries/bullets by relevance. "
+         "Only call finish after that, or if truly nothing can change without inventing facts — then say why.")
+
+
+def _nudge(state: TailorState, parts: list[dict[str, Any]] | None = None) -> bool:
+    """Once per session: if the model tries to stop with zero changes, send it back to work."""
+    if state.changes or state.nudged or state.turns >= MAX_TURNS:
+        return False
+    state.nudged = True
+    state.summary = ""
+    state.contents.append({"role": "user", "parts": [*(parts or []), {"text": NUDGE}]})
+    state.log("nudge", "The AI tried to stop without changes; asked it to tailor the bullets")
+    return True
+
+
+def describe_llm_error(err: str) -> str:
+    """A user-facing reason from the Gemini error text."""
+    low = err.lower()
+    if "daily quota" in low or "perday" in low:
+        return "Gemini's free-tier daily quota is used up (it resets around midnight Pacific)."
+    if "429" in low:
+        return "Gemini's free-tier rate limit was hit (too many requests per minute)."
+    if "timeout" in low:
+        return "Gemini took too long to answer (timed out)."
+    if "malformed_function_call" in low:
+        return "Gemini returned a broken tool call."
+    if "safety" in low or "blocked" in low:
+        return "Gemini declined to answer (content filter)."
+    return "The AI model stopped responding."
 
 
 def _ask(state: TailorState, args: dict[str, Any]) -> list[str]:
