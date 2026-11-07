@@ -167,17 +167,13 @@ def _reorder(doc: ResumeDoc, container_id: str, order: list[str]) -> None:
 # ---- Tools ---------------------------------------------------------------------------
 TOOLS: list[dict[str, Any]] = [
     {"name": "get_resume",
-     "description": "Current working resume (original + your changes so far) with section/entry/bullet ids.",
-     "parameters": {"type": "object", "properties": {}}},
+     "description": "Current working resume (original + your changes so far) with section/entry/bullet ids."},
     {"name": "keyword_gap",
-     "description": "Which job keywords the working resume has exactly, only as a synonym (partial), or is missing.",
-     "parameters": {"type": "object", "properties": {}}},
+     "description": "Which job keywords the working resume has exactly, only as a synonym (partial), or is missing."},
     {"name": "score_match",
-     "description": "Deterministic 0-100 ATS match score of the working resume vs the job, with the baseline.",
-     "parameters": {"type": "object", "properties": {}}},
+     "description": "Deterministic 0-100 ATS match score of the working resume vs the job, with the baseline."},
     {"name": "check_format",
-     "description": "Format issues in the working resume: length over one page, long/weak bullets, missing sections.",
-     "parameters": {"type": "object", "properties": {}}},
+     "description": "Format issues in the working resume: length over one page, long/weak bullets, missing sections."},
     {"name": "search_experience_bank",
      "description": "Search experience the user has that is NOT on this resume (saved items and other resume versions). "
                     "Use before concluding a keyword is missing.",
@@ -465,6 +461,8 @@ def run(state: TailorState, llm: LLM, ctx: Context,
         except LLMError as e:
             log.warning("agent turn %d failed: %s", state.turns, e)
             state.llm_error = describe_llm_error(str(e))
+            if state.llm_error == GENERIC_LLM_ERROR:  # unknown cause: show the actual error to debug from
+                state.llm_error = f"{GENERIC_LLM_ERROR[:-1]} ({str(e)[:200]})."
             state.log("error", f"{state.llm_error} Showing the changes made so far.")
             break
         state.contents.append(turn)
@@ -539,6 +537,9 @@ def _nudge(state: TailorState, parts: list[dict[str, Any]] | None = None) -> boo
     return True
 
 
+GENERIC_LLM_ERROR = "The AI model stopped responding."
+
+
 def describe_llm_error(err: str) -> str:
     """A user-facing reason from the Gemini error text."""
     low = err.lower()
@@ -552,7 +553,13 @@ def describe_llm_error(err: str) -> str:
         return "Gemini returned a broken tool call."
     if "safety" in low or "blocked" in low:
         return "Gemini declined to answer (content filter)."
-    return "The AI model stopped responding."
+    if "400" in low or "invalid_argument" in low:
+        return "Gemini rejected the request (400 bad request)."
+    if "403" in low or "401" in low or "api key" in low:
+        return "Gemini refused the API key (check GEMINI_API_KEY in Render)."
+    if "404" in low:
+        return "The Gemini model name isn't available (check GEMINI_MODEL / TAILOR_MODEL)."
+    return GENERIC_LLM_ERROR
 
 
 def _ask(state: TailorState, args: dict[str, Any]) -> list[str]:

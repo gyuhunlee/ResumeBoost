@@ -290,3 +290,11 @@ def test_model_failure_records_reason():
     state = start_state(parse_rules(RESUME), job(), JD, llm_used=True)
     run(state, Broken(), Context([]))
     assert not state.changes and "daily quota" in state.llm_error
+
+
+def test_tool_schemas_are_gemini_valid():
+    from app.tailor.agent import TOOLS
+
+    for t in TOOLS:  # Gemini 400s on an OBJECT schema with empty properties
+        params = t.get("parameters")
+        assert params is None or params.get("properties"), t["name"]
